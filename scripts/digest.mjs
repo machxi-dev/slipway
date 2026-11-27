@@ -40,7 +40,8 @@ export function parseRules(text) {
 export const wordCount = (rule) => `${rule.topic} ${rule.text}`.split(/\s+/).filter(Boolean).length;
 
 /**
- * Render every digest: general, then one per area. Returns { digests: { name: { file, text } }, problems }.
+ * Render every digest: general, then one per area, then each area's loader under `loader:<area>`.
+ * Returns { digests: { name: { file, text } }, problems }.
  * `template` is templates/digest.md.
  */
 export function renderDigests(root, config, template) {
@@ -82,8 +83,16 @@ export function renderDigests(root, config, template) {
     const text = template.replaceAll('{{area}}', () => name).replaceAll('{{scope}}', () => scope).replaceAll('{{rules}}', () => rules);
     digests[name] = { file: posix(path.join(config.docs.digests, `${name}.md`)), text: text.replace(/\n*$/, '\n') };
   }
+  // An area's loader carries its digest inline. Claude Code reads an @ import at session start even in a rule
+  // with `paths:`, so an imported area digest would load in every session; inline, it loads only when Claude
+  // works on a file in the area (§5.2, §7).
+  for (const a of areas) digests[`loader:${a}`] = { file: areaLoader(a), text: `${loaderFrontmatter(config.areas[a].paths)}${digests[a].text}` };
   return { digests, problems };
 }
+
+/** The path-scoped rule file that loads an area's rules (§5.2). */
+export const areaLoader = (area) => `.claude/rules/slipway-${area}.md`;
+const loaderFrontmatter = (paths) => `---\npaths:\n${paths.map((p) => `  - ${JSON.stringify(p)}`).join('\n')}\n---\n\n`;
 
 /** Run the repository's formatter over files, when it names one (§3.3). */
 export function format(root, config, files) {

@@ -52,6 +52,23 @@ test('`slipway digest` writes one digest per area from accepted records only, ci
   assert.equal(read(repo, 'docs/rules/api.md'), 'edited by hand\n', 'a check writes nothing');
 });
 
+test('an area’s loader carries its digest inline, and an @ import loader is stale (§5.2, §7)', (t) => {
+  const repo = ready(t, { api: { paths: ['api/**', 'lib/api/**'] } });
+  record(repo, '0002-money.md', 'accepted', '- **Money.** Store cents. (areas: api)');
+  const r = slipway(repo, ['digest']);
+  assert.equal(r.code, 0, r.stderr);
+  const loader = read(repo, '.claude/rules/slipway-api.md');
+  assert.equal(loader, `---\npaths:\n  - "api/**"\n  - "lib/api/**"\n---\n\n${read(repo, 'docs/rules/api.md')}`);
+  assert.match(loader, /\*\*Money\.\*\*/);
+  // A loader as v0.1 wrote it, importing the digest, is refreshed by the next `slipway digest`.
+  writeFileSync(path.join(repo, '.claude/rules/slipway-api.md'), '---\npaths:\n  - "api/**"\n---\n\n@../../docs/rules/api.md\n');
+  const c = slipway(repo, ['digest', '--check']);
+  assert.equal(c.code, 1);
+  assert.match(c.stdout, /^stale \.claude\/rules\/slipway-api\.md$/m);
+  assert.equal(slipway(repo, ['digest']).code, 0);
+  assert.equal(read(repo, '.claude/rules/slipway-api.md'), loader);
+});
+
 test('a rule citing a record out of force, or an unknown area, is refused and nothing is written', (t) => {
   const repo = ready(t);
   record(repo, '0002-a.md', 'superseded by [0003](0003-b.md)', '- **A.** a.');

@@ -86,8 +86,11 @@ test('an existing config with areas gets one path-scoped loader and digest per a
   writeFileSync(path.join(repo, 'slipway.config.json'), fixture('monorepo'));
   quiet(repo, {});
   const api = read(repo, '.claude/rules/slipway-api-and-data.md');
-  assert.ok(api.startsWith('---\npaths:\n  - "apps/api/**"\n  - "packages/db/**"\n---\n'), api);
-  assert.match(api, /^@\.\.\/\.\.\/docs\/rules\/api-and-data\.md$/m);
+  assert.ok(api.startsWith('---\npaths:\n  - "apps/api/**"\n  - "packages/db/**"\n---\n\n# Rules: api-and-data\n'), api);
+  // Inline, not an @ import: Claude Code reads a path-scoped rule's imports at session start (§7).
+  assert.doesNotMatch(api, /^@/m);
+  assert.equal(api.slice(api.indexOf('# Rules')), read(repo, 'docs/rules/api-and-data.md'));
+  assert.match(read(repo, '.claude/rules/slipway.md'), /^@\.\.\/\.\.\/docs\/rules\/general\.md$/m);
   assert.ok(existsSync(path.join(repo, '.claude/rules/slipway-frontend.md')));
   assert.ok(existsSync(path.join(repo, '.claude/rules/slipway.md')));
   assert.match(read(repo, 'docs/rules/frontend.md'), /^# Rules: frontend/);
@@ -275,7 +278,10 @@ test('the budget file sets the default ceilings, never below a file’s size tod
   const budget = JSON.parse(read(repo, 'slipway.budget.json'));
   assert.equal(budget['CLAUDE.md'], readFileSync(path.join(repo, 'CLAUDE.md')).length);
   assert.equal(budget['docs/plan/README.md'], 8192);
-  assert.equal(budget['docs/rules/general.md'], 12288);
+  assert.equal(budget['docs/rules/general.md'], 8192);
+  assert.equal(budget['docs/rules/*.md'], 12288);
+  assert.equal(budget['.claude/rules/slipway.md'], 1024);
+  assert.equal(budget['.claude/rules/slipway-*.md'], 13312);
   assert.equal(budget['docs/plan/D*.decisions.md'], 4096);
   const nested = tempRepo(t, 'nested');
   mkdirSync(path.join(nested, '.claude'));

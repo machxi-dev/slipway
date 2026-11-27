@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CONFIG_FILE, loadConfig, normalize } from './config.mjs';
 import { currentBranch } from './git.mjs';
-import { format, renderDigests } from './digest.mjs';
+import { areaLoader, format, renderDigests } from './digest.mjs';
 import { isGlob } from './glob.mjs';
 import { SHIPPED_HEADER, hasTable, ledgerRows, renderLedger, roadmapEntries, shippedLine, splitLegacy, withRows } from './ledger.mjs';
 import { addEntry, planSources } from './lane.mjs';
@@ -201,12 +201,18 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     const digest = posix(path.join(docs.digests, `${d.name}.md`));
     if (!existsSync(abs(digest))) fresh.push(digest);
     writeNew(abs(digest), rendered.digests[d.name].text);
-    // A loader with paths loads when Claude works on a matching file; one without loads in every session.
-    const frontmatter = d.paths ? `---\npaths:\n${d.paths.map((p) => `  - ${JSON.stringify(p)}`).join('\n')}\n---\n\n` : '';
-    const loader = path.join(root, '.claude', 'rules', d.paths ? `slipway-${d.name}.md` : 'slipway.md');
-    // An @ import resolves against the file that holds it, so the path is relative to the loader.
+    if (d.paths) {
+      // An area's loader has `paths:` and its digest inline, so it loads only when Claude works on a matching file.
+      const loader = areaLoader(d.name);
+      if (!existsSync(abs(loader))) fresh.push(loader);
+      writeNew(abs(loader), rendered.digests[`loader:${d.name}`].text);
+      continue;
+    }
+    // The general loader has no paths and loads in every session. An @ import resolves against the file that
+    // holds it, so the path is relative to the loader.
+    const loader = path.join(root, '.claude', 'rules', 'slipway.md');
     const imported = posix(path.relative(path.dirname(loader), abs(digest)));
-    writeNew(loader, render(template('rules-loader.md'), { frontmatter, records: docs.records, digest: imported }));
+    writeNew(loader, render(template('rules-loader.md'), { records: docs.records, digest: imported }));
   }
   // The repository's formatter gets the new digests too, as `slipway digest` would give them (§3.3).
   try {
@@ -292,7 +298,10 @@ function gitOut(cwd, args) {
   return r.status === 0 ? r.stdout.trim() : '';
 }
 
-/** The default ceilings, in bytes, by path or glob. */
+/**
+ * The default ceilings, in bytes, by path or glob. With the step-builder's 4 KB, a step's section of about
+ * 4 KB and 6 KB of conventions skills, a step reaching one area stays under 40 KB at every ceiling (§7).
+ */
 export function defaultBudget(config, claudeMd = 'CLAUDE.md') {
   const { plans, digests } = config.docs;
   return {
@@ -301,9 +310,11 @@ export function defaultBudget(config, claudeMd = 'CLAUDE.md') {
     [`${plans}/ROADMAP.md`]: 32768,
     [`${plans}/D*.md`]: 16384,
     [`${plans}/D*.decisions.md`]: 4096,
-    [`${digests}/general.md`]: 12288,
-    [`${digests}/*.md`]: 32768,
-    '.claude/rules/*.md': 1024,
+    [`${digests}/general.md`]: 8192,
+    [`${digests}/*.md`]: 12288,
+    '.claude/rules/slipway.md': 1024,
+    // An area's loader is its digest inline with a `paths:` frontmatter.
+    '.claude/rules/slipway-*.md': 13312,
   };
 }
 

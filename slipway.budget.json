@@ -4,7 +4,8 @@
   "docs/plan/ROADMAP.md": 32768,
   "docs/plan/D*.md": 16384,
   "docs/plan/D*.decisions.md": 4096,
-  "docs/rules/general.md": 12288,
-  "docs/rules/*.md": 32768,
-  ".claude/rules/*.md": 1024
+  "docs/rules/general.md": 8192,
+  "docs/rules/*.md": 12288,
+  ".claude/rules/slipway.md": 1024,
+  ".claude/rules/slipway-*.md": 13312
 }
