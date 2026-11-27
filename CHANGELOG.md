@@ -21,6 +21,10 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 - The skill `/slipway:ship`: the one stop on the decisions file, the ship commit, the gate and the lane's CI, the merge, the tag and the clean-up (§4.5, §4.6).
 - The skill `/slipway:plan`: planned rows and their roadmap entries from a goal, a review or a finding (§4.1, §4.7).
 
+### Changed
+
+- The ledger's table is generated from the plans' headers and the roadmap's planned entries: `slipway ledger generate [--check]`; `docs-check` refuses it stale and refuses a row with no source rather than drop it; `ledger add`, `set` and `ship` regenerate it, and a merge conflict in it is resolved by regenerating (§4.7).
+
 ### Fixed
 
 - A lane with no commit of its own gets its draft pull request from `/slipway:build`'s first step, not a refused one at scope; `slipway forge --branch` acts on a branch the checkout does not have checked out (§4.2, §4.3).

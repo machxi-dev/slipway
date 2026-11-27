@@ -89,7 +89,7 @@ export function renderDigests(root, config, template) {
 export function format(root, config, files) {
   if (!config.commands.format || !files.length) return;
   const r = spawnSync(`${config.commands.format} ${files.map((f) => quoteArg(f)).join(' ')}`, { cwd: root, shell: true, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
-  if (r.status !== 0) throw new Error(`commands.format failed on the digests: ${r.stderr.trim()}`);
+  if (r.status !== 0) throw new Error(`commands.format failed on ${files.join(', ')}: ${r.stderr.trim()}`);
 }
 
 /**
