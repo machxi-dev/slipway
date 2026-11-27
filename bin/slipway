@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+// Slipway's runner, on the Bash tool's PATH while the plugin is enabled. Its root is found from this
+// file's own path, never from CLAUDE_PLUGIN_ROOT, which the Bash tool does not set (docs/spikes/).
+'use strict';
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+const major = Number(process.versions.node.split('.')[0]);
+if (major < 20) {
+  console.error(`slipway needs Node.js 20 or later; this is ${process.version}.`);
+  process.exit(1);
+}
+
+const pluginRoot = path.resolve(__dirname, '..');
+import(pathToFileURL(path.join(pluginRoot, 'scripts', 'cli.mjs')).href)
+  .then((cli) => cli.main(process.argv.slice(2), { pluginRoot }))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  });
