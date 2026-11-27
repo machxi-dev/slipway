@@ -25,3 +25,9 @@ export function currentBranch(cwd) {
     return null;
   }
 }
+
+/** The main checkout's root: lane worktrees sit beside it and copy their files from it. */
+export function mainRoot(cwd) {
+  const common = commonDir(cwd);
+  return path.basename(common) === '.git' ? path.dirname(common) : path.resolve(cwd);
+}

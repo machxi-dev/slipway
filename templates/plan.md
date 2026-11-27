@@ -3,26 +3,31 @@
 - Status: planned
 - Records: {{records}}
 - CI: {{ci}}
-- Branch: {{branch}}
+- Branch: `{{branch}}`
 
-{{scope}}
+{{goal}}
+
+## Constraints
+
+<!-- One bullet each, citing the record it comes from. -->
 
 ## Done when
 
-<!-- Commands and test names, never prose: "`slipway run gate` is green", "`orders.test.ts › refunds a partial order` passes". -->
+<!-- The definition of done, which /slipway:ship runs on the lane's head: commands and test names only. -->
 
 - [ ] `slipway run gate` is green.
 
 ## Steps
 
-<!-- Steps cut as large as a builder can hold whole. Each names the records it reads and the paths it touches. -->
+<!-- Each step is one commit that one builder holds whole and one reviewer reads as one diff. Every step builds; none is a close-out. -->
 
 ### 1. {{first step}}
 
 - [ ] Built
-- Records:
-- Paths:
+- Done when: {{done when}}
+- Records: {{step records}}
+- Paths: {{paths}}
 
 ## Asked at scope
 
-<!-- The operator's answers to the decisions batch, one line each. -->
+<!-- Each of the operator's decisions: the answer, and what was declined. -->

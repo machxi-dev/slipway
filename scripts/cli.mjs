@@ -6,13 +6,21 @@ import { repoRoot } from './git.mjs';
 import { runCommand } from './run.mjs';
 import { init, parseInitArgs } from './init.mjs';
 import { acceptRecord, newRecord } from './records.mjs';
+import { addRow, findLane, nextDeliverable, overlapWarnings, parseLaneArg, setStatus, shipRow, skillsFor } from './lane.mjs';
+import { stepText } from './plan.mjs';
+import { digest } from './digest.mjs';
+import { docsCheck } from './docs-check.mjs';
+import { makeWorktree, removeWorktree } from './worktree.mjs';
+import { forge } from './forge.mjs';
+import { bump, tag } from './release.mjs';
 
 const USAGE = `usage: slipway <verb> [args]
 
   run <name> [args...]   run a command named in slipway.config.json, from the repository root
   run                    list the command names
-  init [options]         make this repository ready: config, ledger, records index, digests and their
-                         rule loaders, settings, the CLAUDE.md sentence, the README setup line
+  run step-check [--base <ref>]
+                         the step check, handed the paths changed since the tree last proved green here
+  init [options]         make this repository ready (see /slipway:init)
       --check <cmd>      required for a new config: the command that proves the tree
       --step-check <cmd>, --gate <cmd>   default to --check
       --tag-prefix <p>, --forge github|none, --records|--plans|--digests <dir>, --specs <dir>|none
@@ -21,6 +29,23 @@ const USAGE = `usage: slipway <verb> [args]
   adr new <title> [--supersedes <n>[,<n>...]]
                          write the next record from the template, proposed, and add it to the index
   adr accept <n>         mark a proposed record accepted and the records it supersedes superseded by it
+  lane [D<n>] [--step <k>|next] [--overlap]
+                         the lane of this branch (or D<n>): its plan, decisions, worktree and next step;
+                         --step prints the plan header and that step's section, with its conventions skills;
+                         --overlap warns of open lanes naming the same records
+  ledger next | add <title> [--scope <line>] | set D<n> "planned"|"in progress" | ship D<n> [--pr <url>]
+                         the ledger's rows: the next number, a planned row, a status, a shipped row
+  digest [--check]       write the digests from the accepted records' rules (or say which are stale)
+  docs-check             the ledger, plans, decisions, records, digests, specs and byte budgets
+  worktree [D<n>]        make the lane's worktree, copy lane.copy into it and run lane.setup
+  worktree remove D<n>   remove a shipped lane's worktree and branch
+  forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | ready | merge
+  forge run [--sha <sha>] [--wait] [--log]
+                         the forge's pull request and CI run for this branch (github through gh; none locally)
+  release bump patch|minor|major
+                         bump the version in release.versionFile and release.also
+  tag D<n> --head <sha> [--commit <sha>] [--pr <url>] [--title <t>]
+                         tag the merge commit of a shipped lane; never moves a tag
   config                 check slipway.config.json and print it with its defaults filled in
   version                print the plugin's version
 
@@ -36,10 +61,33 @@ function needRepo(cwd) {
   return root;
 }
 
+/** Split args into options and the rest. `values` take one argument; `flags` take none. */
+function options(args, { values = [], flags = [] } = {}) {
+  const opts = {};
+  const rest = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    const eq = a.indexOf('=');
+    const name = a.startsWith('--') ? (eq > 0 ? a.slice(2, eq) : a.slice(2)) : null;
+    if (name !== null && values.includes(name)) {
+      if (eq > 0) opts[name] = a.slice(eq + 1);
+      else if (i + 1 < args.length) opts[name] = args[++i];
+      else throw new UsageError(`--${name} needs a value`);
+    } else if (name !== null && flags.includes(name)) opts[name] = true;
+    else if (name !== null) throw new UsageError(`unknown option ${a}`);
+    else rest.push(a);
+  }
+  return { opts, rest };
+}
+
+const setup = (cwd) => {
+  const root = needRepo(cwd);
+  return { root, config: loadConfig(root) };
+};
+
 const verbs = {
   async run(args, { cwd, pluginRoot, out, err }) {
-    const root = needRepo(cwd);
-    const config = loadConfig(root);
+    const { root, config } = setup(cwd);
     const [name, ...rest] = args;
     if (!name) {
       for (const [n, c] of Object.entries(config.commands)) {
@@ -62,31 +110,147 @@ const verbs = {
     return 0;
   },
   async adr(args, { cwd, pluginRoot, out }) {
-    const root = needRepo(cwd);
-    const dir = path.join(root, loadConfig(root).docs.records);
-    const [sub, ...rest] = args;
-    const rel = (f) => path.posix.join(loadConfig(root).docs.records, f);
+    const { root, config } = setup(cwd);
+    const dir = path.join(root, config.docs.records);
+    const rel = (f) => path.posix.join(config.docs.records, f);
+    const [sub, ...more] = args;
     if (sub === 'new') {
-      const supersedes = [];
-      const words = [];
-      for (let i = 0; i < rest.length; i++) {
-        if (rest[i] === '--supersedes') {
-          if (i + 1 >= rest.length) throw new UsageError('--supersedes needs record numbers');
-          supersedes.push(...rest[++i].split(',').filter(Boolean));
-        } else if (rest[i].startsWith('--supersedes=')) supersedes.push(...rest[i].slice(13).split(',').filter(Boolean));
-        else if (rest[i].startsWith('--')) throw new UsageError(`unknown option ${rest[i]}`);
-        else words.push(rest[i]);
-      }
+      const { opts, rest } = options(more, { values: ['supersedes'] });
       const template = readFileSync(path.join(pluginRoot, 'templates', 'record.md'), 'utf8');
-      const r = newRecord(dir, template, { title: words.join(' '), supersedes });
+      const supersedes = (opts.supersedes ?? '').split(',').filter(Boolean);
+      const r = newRecord(dir, template, { title: rest.join(' '), supersedes });
       out(rel(r.file));
       return 0;
     }
-    if (sub === 'accept' && rest.length === 1) {
-      for (const f of acceptRecord(dir, rest[0])) out(rel(f));
+    if (sub === 'accept' && more.length === 1) {
+      for (const f of acceptRecord(dir, more[0])) out(rel(f));
       return 0;
     }
     throw new UsageError('usage: slipway adr new <title> [--supersedes <n>,...] | slipway adr accept <n>');
+  },
+  async lane(args, { cwd, out, err }) {
+    const { root, config } = setup(cwd);
+    const { opts, rest } = options(args, { values: ['step'], flags: ['overlap'] });
+    const lane = findLane(root, config, rest[0]);
+    if (opts.overlap) {
+      for (const w of overlapWarnings(root, config, lane.n)) out(`warning: ${w}`);
+      return 0;
+    }
+    if (!lane.plan) throw new UsageError(`D${lane.n} has no plan at ${lane.planFile}; /slipway:scope writes it`);
+    const next = lane.plan.steps.find((s) => !s.built);
+    const want = opts.step ?? (lane.k !== null ? String(lane.k) : undefined);
+    if (want !== undefined) {
+      const k = want === 'next' ? next?.k : Number(want);
+      const text = k === undefined ? null : stepText(lane.plan, k);
+      if (!text) throw new UsageError(want === 'next' ? `every step of D${lane.n} is built` : `D${lane.n} has no step ${want}`);
+      const step = lane.plan.steps.find((s) => s.k === k);
+      const skills = skillsFor(config, step.fields.Paths ?? '');
+      out(text);
+      out('');
+      out(`Lane branch: ${lane.branch}${lane.current === lane.branch ? '' : ` (checked out: ${lane.current ?? 'detached'})`}`);
+      out(`Decisions file: ${lane.decisionsFile}`);
+      out(`Conventions skills: ${skills.length ? skills.join(', ') : 'none'}`);
+      return 0;
+    }
+    const open = lane.decisions.filter((d) => d.open).length;
+    const built = lane.plan.steps.filter((s) => s.built).length;
+    out(`D${lane.n}. ${lane.plan.title}`);
+    out(`status: ${lane.plan.header.Status ?? '?'}; CI: ${lane.plan.header.CI ?? '?'}${lane.plan.header.Release ? `; release: ${lane.plan.header.Release}` : ''}`);
+    out(`branch: ${lane.branch}${lane.current === lane.branch ? ' (checked out)' : ''}`);
+    out(`plan: ${lane.planFile}`);
+    out(`decisions: ${lane.decisionsFile} (${open} open)`);
+    out(`worktree: ${lane.worktree}`);
+    out(`steps: ${built} of ${lane.plan.steps.length} built${next ? `; next: ${next.k}. ${next.title}` : ''}`);
+    return 0;
+  },
+  async ledger(args, { cwd, out }) {
+    const { root, config } = setup(cwd);
+    const [sub, ...more] = args;
+    if (sub === 'next' && !more.length) {
+      out(`D${nextDeliverable(root, config)}`);
+      return 0;
+    }
+    if (sub === 'add') {
+      const { opts, rest } = options(more, { values: ['scope'] });
+      if (!rest.length) throw new UsageError('ledger add needs a title');
+      out(`D${addRow(root, config, rest.join(' '), opts.scope)}`);
+      return 0;
+    }
+    if (sub === 'set' && more.length === 2) {
+      setStatus(root, config, parseLaneArg(more[0]).n, more[1]);
+      return 0;
+    }
+    if (sub === 'ship') {
+      const { opts, rest } = options(more, { values: ['pr', 'date'] });
+      if (rest.length !== 1) throw new UsageError('ledger ship needs D<n>');
+      shipRow(root, config, parseLaneArg(rest[0]).n, { pr: opts.pr, date: opts.date });
+      return 0;
+    }
+    throw new UsageError('usage: slipway ledger next | add <title> [--scope <line>] | set D<n> <status> | ship D<n> [--pr <url>]');
+  },
+  async digest(args, { cwd, pluginRoot, out, err }) {
+    const { root, config } = setup(cwd);
+    const { opts } = options(args, { flags: ['check'] });
+    const template = readFileSync(path.join(pluginRoot, 'templates', 'digest.md'), 'utf8');
+    const r = digest(root, config, template, { check: opts.check });
+    for (const p of r.problems) err(p);
+    if (r.problems.length) return 1;
+    for (const f of r.stale) out(`stale ${f}`);
+    for (const f of r.written) out(`wrote ${f}`);
+    return r.stale.length ? 1 : 0;
+  },
+  async 'docs-check'(args, { cwd, pluginRoot, out, err }) {
+    const { root, config } = setup(cwd);
+    if (args.length) throw new UsageError('docs-check takes no arguments');
+    const { problems, files } = docsCheck(root, config, pluginRoot);
+    for (const p of problems) err(p);
+    if (problems.length) {
+      err(`docs-check: ${problems.length} problem${problems.length === 1 ? '' : 's'}`);
+      return 1;
+    }
+    out(`docs-check: ok (${files} files)`);
+    return 0;
+  },
+  async worktree(args, { cwd, pluginRoot, out }) {
+    const { root, config } = setup(cwd);
+    if (args[0] === 'remove') {
+      if (args.length !== 2) throw new UsageError('usage: slipway worktree remove D<n>');
+      removeWorktree(root, config, args[1], { log: out });
+      return 0;
+    }
+    if (args.length > 1) throw new UsageError('usage: slipway worktree [D<n>]');
+    const w = makeWorktree(root, config, args[0], { pluginRoot, log: out });
+    out(w.path);
+    if (w.setup !== null && w.setup !== 0) {
+      out(`lane.setup exited ${w.setup}`);
+      return w.setup;
+    }
+    return 0;
+  },
+  async forge(args, { cwd, out }) {
+    const { root, config } = setup(cwd);
+    const [verb, ...more] = args;
+    const { opts } = options(more, { values: ['title', 'body-file', 'sha'], flags: ['wait', 'log'] });
+    const r = await forge(root, config, verb, { title: opts.title, bodyFile: opts['body-file'], sha: opts.sha, wait: opts.wait, log: opts.log });
+    for (const l of r.lines) out(l);
+    return r.code;
+  },
+  async release(args, { cwd, out }) {
+    const { root, config } = setup(cwd);
+    if (args[0] !== 'bump' || args.length !== 2) throw new UsageError('usage: slipway release bump patch|minor|major');
+    const r = bump(root, config, args[1]);
+    out(`${r.from} -> ${r.to}; tag ${r.tag}`);
+    for (const f of r.files) out(`updated ${f}`);
+    return 0;
+  },
+  async tag(args, { cwd, out }) {
+    const { root, config } = setup(cwd);
+    const { opts, rest } = options(args, { values: ['head', 'commit', 'pr', 'title'] });
+    if (rest.length !== 1) throw new UsageError('usage: slipway tag D<n> --head <sha> [--commit <sha>] [--pr <url>] [--title <t>]');
+    const n = parseLaneArg(rest[0]).n;
+    const t = tag(root, config, n, { head: opts.head, commit: opts.commit, pr: opts.pr, title: opts.title });
+    out(`${t.name} ${t.sha}`);
+    return 0;
   },
   async config(args, { cwd, out }) {
     out(JSON.stringify(loadConfig(needRepo(cwd)), null, 2));
