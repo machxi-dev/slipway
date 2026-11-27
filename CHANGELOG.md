@@ -2,7 +2,7 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
-## Unreleased
+## 0.2.0 — 2026-11-27
 
 ### Added
 
@@ -19,11 +19,14 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 
 - The ledger's table is generated from the plans' headers and the roadmap's planned entries: `slipway ledger generate [--check]`; `docs-check` refuses it stale and refuses a row with no source rather than drop it; `ledger add`, `set` and `ship` regenerate it, and a merge conflict in it is resolved by regenerating (§4.7).
 - `/slipway:ship` publishes a GitHub Release for a release tag under `forge: github`, its notes the version's changelog section (§4.5 step 8).
+- The development loop loads the plugin from a separate worktree of `main` (`git worktree add --detach ../slipway-plugin origin/main`), refreshed between lanes, instead of from the working copy: Claude Code 2.1.332 treats every file under a `--plugin-dir` path as sensitive and refuses edits to it (§13.2).
+- The README's status line says what works today instead of "the v0.1 skeleton".
 
 ### Fixed
 
 - `slipway digest` accepts a successor's carried rule line that cites the parent it supersedes, `(with: <parent>)`, as §14 tells a delta supersession to write it; the chain is read from the successor's `- Supersedes:` line or the parent's `superseded by` status, and a superseded record cited by any other record is still refused (§14).
 - `docs-check` reads nothing inside a fenced block of a spec as a requirement, so a specs README can show the shape in an example (§14).
+- The lock tests wait, within a bound, until their dead holder's pid is reported gone before they use it, so they no longer flake on Windows, which can report a pid alive for a moment after its process exits.
 - `slipway init` gives a file a budget glob reaches, and that is over the glob's ceiling today, its own entry at its size, so a brownfield repository's long shipped plans pass `docs-check` on day one (§12).
 
 ## 0.1.0 — 2026-11-27

@@ -83,7 +83,7 @@ test('a waiting command says what it waits for and runs once the lock is release
 
 test('a lock left by a process that is gone is broken', async (t) => {
   const { repo, lock } = setup(t);
-  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  const dead = await deadPid();
   mkdirSync(path.dirname(lock), { recursive: true });
   writeFileSync(lock, JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' }));
   const r = slipway(repo, ['run', 'gate'], { env: { LOCK_FILE: lock, SLIPWAY_LOCK_TIMEOUT: '0' } });
@@ -148,15 +148,7 @@ test(
     const { code } = await exited;
     assert.equal(code, 128 + 15);
     assert.equal(existsSync(lock), false);
-    const gone = () => {
-      try {
-        process.kill(sleeper, 0);
-        return false;
-      } catch (err) {
-        return err.code === 'ESRCH';
-      }
-    };
-    await until(gone, 5_000);
+    await until(() => gone(sleeper), 5_000);
   },
 );
 
@@ -168,9 +160,26 @@ async function until(cond, ms = 10_000) {
   }
 }
 
+function gone(pid) {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err) {
+    return err.code === 'ESRCH';
+  }
+}
+
+// The pid of a process that has exited and that the OS no longer reports as alive. Windows can
+// report a pid as alive for a moment after its process exits, so wait for ESRCH, within a bound.
+async function deadPid(ms = 5_000) {
+  const pid = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  await until(() => gone(pid), ms);
+  return pid;
+}
+
 test('a lock whose runner died while its command’s shell still runs is kept (§14)', async (t) => {
   const { repo, lock } = setup(t);
-  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  const dead = await deadPid();
   const shell = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
   t.after(() => shell.kill());
   mkdirSync(path.dirname(lock), { recursive: true });
@@ -188,7 +197,7 @@ test('the lock names the command’s shell while it runs', async (t) => {
 
 test('a stale lock is taken over only under the claim; a claim left by a dead waiter is cleared', async (t) => {
   const { repo, lock } = setup(t);
-  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  const dead = await deadPid();
   mkdirSync(path.dirname(lock), { recursive: true });
   const old = JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' });
   writeFileSync(lock, old);
