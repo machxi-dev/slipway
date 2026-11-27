@@ -6,8 +6,8 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 
 ### Added
 
-- `release.title` in `slipway.config.json`: the GitHub Release's title, with `{version}` and `{tag}` filled, the tag itself by default. A config that sets it needs this version: 0.2 refuses the key as unknown. `slipway release notes [--out <file>]` prints the title and writes the current version's changelog section, and `/slipway:ship` gives both to `gh release create` (§4.5 step 8).
-- `slipway forge pr-open --plan <plan>` builds the lane's pull request from its plan: the title `D<n> — <title>` unless `--title` says otherwise, and a body of the plan's goal, its step titles, its path and its `CI:` line. It replaces `pr-open --body-file`, which is refused; `/slipway:scope` and `/slipway:build` use it (§4.2, §4.4).
+- `release.title` in `slipway.config.json`: the GitHub Release's title, with `{version}` and `{tag}` filled, the tag itself by default; `"`, backtick, `$`, `\` and line breaks are refused, since the ship quotes it on a command line. A config that sets it needs this version: 0.2 refuses the key as unknown. `slipway release notes [--out <file>]` prints the title and writes the current version's changelog section, and `/slipway:ship` gives both to `gh release create` (§4.5 step 8).
+- `slipway forge pr-open --plan <plan>` builds the lane's pull request from its plan: the title `D<n> — <title>` unless `--title` says otherwise, and a body of the plan's goal, its step titles, its path and its `CI:` line. It replaces `pr-open --body-file`, which is refused, with `--plan` or without; a plan outside the repository is refused; `/slipway:scope` and `/slipway:build` use it (§4.2, §4.4).
 
 ### Changed
 
@@ -16,7 +16,7 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 ### Fixed
 
 - `slipway ledger next` and `slipway lane --overlap` read the lane branches on the remote, after a fetch, as well as the checked-out tree, so a row planned or a lane opened on its branch is counted before it reaches the default branch; and `slipway lane --step` prints the plan's `## Constraints` before the step's section, so the step builder reads them (§4.2, §4.4).
-- `slipway release bump` renames a root `CHANGELOG.md`'s `## Unreleased` heading to `## <version> — <date>` and lists the changelog among the files it wrote, instead of leaving the heading for the ship to fix by hand; it refuses a changelog with no `## Unreleased` and then writes nothing. `/slipway:ship` says it tags the merge commit, not the ship commit (§4.5 step 8).
+- `slipway release bump` renames a root `CHANGELOG.md`'s `## Unreleased` heading to `## <version> — <date>`, or Keep a Changelog's `## [Unreleased]` to `## [<version>] - <date>`, and lists the changelog among the files it wrote, instead of leaving the heading for the ship to fix by hand; it refuses a changelog with no `## Unreleased` and then writes nothing. `/slipway:ship` says it tags the merge commit, not the ship commit (§4.5 step 8).
 
 ## 0.2.1 — 2026-11-27
 

@@ -162,6 +162,16 @@ else console.log('https://github.com/o/r/pull/4');
   // The body comes from the plan alone: --body-file is not pr-open's.
   const bare = slipway(repo, ['forge', 'pr-open', '--title', 't', '--body-file', 'x.md'], { env });
   assert.equal(bare.code, 2);
-  assert.match(bare.stderr, /pr-open needs --plan/);
+  assert.match(bare.stderr, /pr-open takes no --body-file/);
+  assert.match(slipway(repo, ['forge', 'pr-open', '--title', 't'], { env }).stderr, /pr-open needs --plan/);
   assert.match(slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D9.md'], { env }).stderr, /--plan .*D9\.md: no such file/);
+  // Given beside --plan, --body-file is refused too, not ignored.
+  const both = slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D4.md', '--body-file', 'x.md'], { env });
+  assert.equal(both.code, 2);
+  assert.match(both.stderr, /pr-open takes no --body-file/);
+  // A plan outside the repository would put the folders around it in the body: refused.
+  writeFileSync(path.join(repo, '..', 'D4.md'), plan);
+  const outside = slipway(repo, ['forge', 'pr-open', '--plan', '../D4.md'], { env });
+  assert.equal(outside.code, 2);
+  assert.match(outside.stderr, /--plan .*D4\.md: not in this repository/);
 });

@@ -113,6 +113,14 @@ test('release.title defaults to the tag and fills {version} and {tag}', () => {
   assert.equal(releaseTitle(release({ tag: 'rel-{version}', title: 'Shop {version} ({tag})' }), '1.2.0'), 'Shop 1.2.0 (rel-1.2.0)');
   assert.equal(releaseTitle(normalize(fixture('slipway')), '0.3.0'), 'Slipway v0.3.0');
   assert.deepEqual(problemsOf({ ...minimal(), release: { versionFile: 'v.txt', title: '' } }), ['release.title: must be a non-empty string']);
+  // The ship quotes the title on a command line, so nothing in it may end the quotes or expand.
+  for (const title of ['Say "hi" {version}', 'Cost $HOME', 'Run `x`', 'Back\\slash', 'Two\nlines']) {
+    assert.deepEqual(
+      problemsOf({ ...minimal(), release: { versionFile: 'v.txt', title } }),
+      ['release.title: must not hold ", `, $, \\ or a line break: the ship quotes it on a command line'],
+      title,
+    );
+  }
 });
 
 test('a missing file says to run init; broken JSON names the file', (t) => {

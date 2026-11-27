@@ -42,11 +42,13 @@ function replaceVersion(text, from, to) {
   return null;
 }
 
-const UNRELEASED = /^## Unreleased[ \t]*(?=\r?$)/m;
+// `## Unreleased`, or Keep a Changelog's `## [Unreleased]`.
+const UNRELEASED = /^## (?:\[Unreleased\]|Unreleased)[ \t]*(?=\r?$)/m;
 
 /**
  * Bump the release version in versionFile and every file under also, and rename a root CHANGELOG.md's
- * `## Unreleased` heading to `## <version> — <date>`. Nothing is written unless every file can be.
+ * `## Unreleased` heading to `## <version> — <date>`, or a bracketed `## [Unreleased]` to Keep a Changelog's
+ * `## [<version>] - <date>`. Nothing is written unless every file can be.
  * Returns { from, to, tag, title, files }.
  */
 export function bump(root, config, part, { date = today() } = {}) {
@@ -65,8 +67,10 @@ export function bump(root, config, part, { date = today() } = {}) {
   const changelog = path.join(root, CHANGELOG);
   if (existsSync(changelog)) {
     const text = readFileSync(changelog, 'utf8');
-    if (!UNRELEASED.test(text)) throw usage(`${CHANGELOG} has no "## Unreleased" heading for ${to}`);
-    updated.push([changelog, text.replace(UNRELEASED, `## ${to} — ${date}`)]);
+    const m = UNRELEASED.exec(text);
+    if (!m) throw usage(`${CHANGELOG} has no "## Unreleased" heading for ${to}`);
+    const heading = m[0].includes('[') ? `## [${to}] - ${date}` : `## ${to} — ${date}`;
+    updated.push([changelog, text.replace(UNRELEASED, heading)]);
     files.push(CHANGELOG);
   }
   for (const [abs, text] of updated) writeFileSync(abs, text);
@@ -80,10 +84,11 @@ function currentVersion(root, config) {
   return v;
 }
 
-/** A changelog's section for one version: the lines under its `## <version>` heading, up to the next. */
+/** A changelog's section for one version: the lines under its `## <version>` (or `## [<version>]`) heading, up to the next. */
 export function changelogSection(text, version) {
   const lines = text.split(/\r?\n/);
-  const head = new RegExp(`^## ${escape(version)}(?:\\s|$)`);
+  const v = escape(version);
+  const head = new RegExp(`^## (?:\\[${v}\\]|${v})(?:\\s|$)`);
   const start = lines.findIndex((l) => head.test(l));
   if (start < 0) return null;
   let end = lines.findIndex((l, i) => i > start && l.startsWith('## '));

@@ -135,6 +135,10 @@ export function normalize(raw, file = CONFIG_FILE) {
       };
       if (release.versionFile === undefined) bad('release.versionFile', 'required when release is set');
       if (isString(release.tag) && !release.tag.includes('{version}')) bad('release.tag', 'must contain {version}');
+      // The ship passes the title to gh in double quotes, in Bash or PowerShell: nothing there may end or expand it.
+      if (isString(release.title) && /["`$\\\r\n]/.test(release.title)) {
+        bad('release.title', 'must not hold ", `, $, \\ or a line break: the ship quotes it on a command line');
+      }
     }
   }
 

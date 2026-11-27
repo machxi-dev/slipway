@@ -62,6 +62,11 @@ test("release bump renames the changelog's Unreleased heading to the version and
   const crlf = releaseRepo(t, { changelog: CHANGES.replaceAll('\n', '\r\n') });
   assert.equal(slipway(crlf, ['release', 'bump', 'patch', '--date', '2026-11-28']).code, 0);
   assert.match(readFileSync(path.join(crlf, 'CHANGELOG.md'), 'utf8'), /\r\n## 0\.1\.1 — 2026-11-28\r\n/);
+  // Keep a Changelog's bracketed headings keep their brackets, and the notes find them.
+  const kac = releaseRepo(t, { changelog: '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Brackets.\n\n## [0.1.0] - 2026-01-01\n\n- Start.\n' });
+  assert.equal(slipway(kac, ['release', 'bump', 'patch', '--date', '2026-11-28']).code, 0);
+  assert.match(readFileSync(path.join(kac, 'CHANGELOG.md'), 'utf8'), /\n## \[0\.1\.1\] - 2026-11-28\n\n### Added\n\n- Brackets\.\n\n## \[0\.1\.0\]/);
+  assert.equal(slipway(kac, ['release', 'notes']).stdout, 'Slipway v0.1.1\n\n### Added\n\n- Brackets.\n');
   const bare = releaseRepo(t, { changelog: null });
   const b = slipway(bare, ['release', 'bump', 'patch']);
   assert.equal(b.code, 0, b.stderr);

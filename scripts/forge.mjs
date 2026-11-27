@@ -118,9 +118,12 @@ export async function forge(root, config, verb, opts = {}) {
   const lines = [];
   switch (verb) {
     case 'pr-open': {
+      if (opts.bodyFile) throw usage('pr-open takes no --body-file: the body is built from --plan');
       if (none) return { code: 0, lines: ['forge none: no pull request; the lane is its branch'] };
       if (!opts.plan) throw usage('pr-open needs --plan <the lane plan>; the body is built from it');
       if (!existsSync(opts.plan)) throw usage(`--plan ${opts.plan}: no such file`);
+      const inside = path.relative(root, path.resolve(opts.plan));
+      if (inside === '..' || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) throw usage(`--plan ${opts.plan}: not in this repository`);
       const pr = prFromPlan(root, opts.plan);
       const title = opts.title ?? pr.title;
       const open = JSON.parse(gh(root, ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1']) || '[]');
