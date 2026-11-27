@@ -147,7 +147,18 @@ export function docsCheck(root, config, pluginRoot) {
 function checkSpec(f, text, bad, has) {
   const lines = text.split(/\r?\n/);
   const reqs = [];
+  // A fenced block is an example, as a specs README shows the shape: nothing in it is a requirement (§14).
+  let fence = null;
   lines.forEach((l, i) => {
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(l);
+    if (fence) {
+      if (open && open[1][0] === fence[0] && open[1].length >= fence.length && !l.slice(open[0].length).trim()) fence = null;
+      return;
+    }
+    if (open) {
+      fence = open[1];
+      return;
+    }
     if (/^## Requirement:/.test(l)) reqs.push({ line: i + 1, body: [] });
     else if (/^## /.test(l)) reqs.push(null);
     else if (reqs.at(-1)) reqs.at(-1).body.push({ l, i });

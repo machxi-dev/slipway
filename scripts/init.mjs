@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { CONFIG_FILE, loadConfig, normalize } from './config.mjs';
 import { currentBranch } from './git.mjs';
 import { areaLoader, format, renderDigests } from './digest.mjs';
-import { isGlob } from './glob.mjs';
+import { isGlob, matches } from './glob.mjs';
 import { SHIPPED_HEADER, hasTable, ledgerRows, renderLedger, roadmapEntries, shippedLine, splitLegacy, withRows } from './ledger.mjs';
 import { addEntry, planSources } from './lane.mjs';
 import { INDEX_HEADER, listRecords, newRecord, today, upsertIndexRow } from './records.mjs';
@@ -293,6 +293,13 @@ function defaultBranchOf(root) {
   return null;
 }
 
+/** The files docs-check sees (§14): tracked and untracked, never ignored, repository-relative with forward slashes. */
+function listedFiles(root) {
+  const r = spawnSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: root, encoding: 'utf8' });
+  const out = r.status === 0 ? r.stdout : '';
+  return [...new Set(out.split('\0').filter(Boolean))].filter((f) => existsSync(path.join(root, f)));
+}
+
 function gitOut(cwd, args) {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
   return r.status === 0 ? r.stdout.trim() : '';
@@ -325,9 +332,19 @@ function writeBudget(root, config, claudeMd, actions) {
     return;
   }
   const budget = defaultBudget(config, claudeMd);
+  const globs = Object.keys(budget).filter(isGlob);
   for (const [p, ceiling] of Object.entries(budget)) {
     if (isGlob(p) || !existsSync(path.join(root, p))) continue;
     budget[p] = Math.max(ceiling, statSync(path.join(root, p)).size);
+  }
+  // A file a glob reaches that is over the glob's ceiling today gets its own entry at its size: no worse than
+  // today (§12), and a path entry wins over a glob (§14).
+  for (const f of listedFiles(root)) {
+    if (Object.hasOwn(budget, f)) continue;
+    const reached = globs.filter((g) => matches(g, f)).map((g) => budget[g]);
+    if (!reached.length) continue;
+    const size = statSync(path.join(root, f)).size;
+    if (size > Math.min(...reached)) budget[f] = size;
   }
   writeFileSync(file, `${JSON.stringify(budget, null, 2)}\n`);
   actions.push({ action: 'wrote', path: BUDGET_FILE });

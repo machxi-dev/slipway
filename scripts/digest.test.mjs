@@ -81,14 +81,36 @@ test('an area’s loader carries its digest inline, and an @ import loader is st
 
 test('a rule citing a record out of force, or an unknown area, is refused and nothing is written', (t) => {
   const repo = ready(t);
-  record(repo, '0002-a.md', 'superseded by [0003](0003-b.md)', '- **A.** a.');
+  record(repo, '0002-a.md', 'superseded by [0004](0004-c.md)', '- **A.** a.');
   record(repo, '0003-b.md', 'accepted', '- **B.** b. (with: 2) (areas: nowhere)');
+  record(repo, '0004-c.md', 'accepted', '- **C.** c.');
   const before = read(repo, 'docs/rules/general.md');
   const r = slipway(repo, ['digest']);
   assert.equal(r.code, 1);
   assert.match(r.stderr, /0003-b\.md:\d+: \(with: 2\) cites 0002-a\.md, which is superseded/);
   assert.match(r.stderr, /\(areas: nowhere\) is not an area/);
   assert.equal(read(repo, 'docs/rules/general.md'), before);
+});
+
+test('a successor may cite the parent it supersedes, down the chain, and no other record may (§14)', (t) => {
+  const repo = ready(t);
+  const write = (file, head, rules) =>
+    writeFileSync(path.join(repo, 'docs/adr', file), `# ${file.slice(0, 4)}. X\n\n${head}\n- Date: 2026-11-27\n\n## Decision\n\nX.\n\n## Rules\n\n${rules}\n`);
+  // 0002 ← 0003 by 0003's Supersedes line; 0003 ← 0004 by 0003's status alone, as an adopted corpus may write it.
+  write('0002-a.md', '- Status: superseded by [0003](0003-b.md)', '- **A.** a.');
+  write('0003-b.md', '- Status: superseded by [0004](0004-c.md)\n- Supersedes: [0002](0002-a.md)', '- **B.** b.');
+  write('0004-c.md', '- Status: accepted', '- **A.** a, carried. (with: 0002)\n- **B.** b, carried. (with: 3)');
+  const r = slipway(repo, ['digest']);
+  assert.equal(r.code, 0, r.stderr);
+  const general = read(repo, 'docs/rules/general.md');
+  assert.match(general, /^- \*\*A\.\*\* a, carried\. \(\[0004\]\(\.\.\/adr\/0004-c\.md\), with \[0002\]\(\.\.\/adr\/0002-a\.md\)\)$/m);
+  assert.match(general, /^- \*\*B\.\*\* b, carried\. \(\[0004\]\(\.\.\/adr\/0004-c\.md\), with \[0003\]\(\.\.\/adr\/0003-b\.md\)\)$/m);
+  assert.equal(slipway(repo, ['docs-check']).code, 0, slipway(repo, ['docs-check']).stderr);
+  // A record outside the chain citing the superseded parent is still refused.
+  write('0005-d.md', '- Status: accepted', '- **D.** d. (with: 2)');
+  const d = slipway(repo, ['digest']);
+  assert.equal(d.code, 1);
+  assert.match(d.stderr, /0005-d\.md:\d+: \(with: 2\) cites 0002-a\.md, which is superseded, and not by 0005-d\.md/);
 });
 
 test('with commands.format, the digest is compared after the formatter (§3.3)', (t) => {
