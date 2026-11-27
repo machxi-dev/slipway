@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "slipway": {
+      "source": {
+        "source": "github",
+        "repo": "machxi-dev/slipway"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "slipway@slipway": true
+  }
+}
