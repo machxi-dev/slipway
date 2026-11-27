@@ -40,7 +40,15 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   writeFileSync(path.join(wt, 'a.txt'), 'a\n');
   git(wt, 'add', 'a.txt');
   git(wt, 'commit', '-q', '-m', 'feat: D1.1 a');
-  for (const verb of ['pr-open', 'pr', 'comment', 'ready', 'run']) assert.equal(slipway(wt, ['forge', verb]).code, 0, verb);
+  for (const verb of ['pr-open', 'pr', 'ready', 'run']) assert.equal(slipway(wt, ['forge', verb]).code, 0, verb);
+  // Step comments are kept in the worktree's git dir, so a resumed build can see which steps were reviewed.
+  assert.equal(slipway(wt, ['forge', 'comments']).stdout, '');
+  writeFileSync(path.join(wt, '..', 'c1.md'), 'D1.1 reviewed: clean\n\nfeat: D1.1 a\n');
+  writeFileSync(path.join(wt, '..', 'c2.md'), '\nD1.2 reviewed: 2 findings, fixed in abc\n');
+  assert.equal(slipway(wt, ['forge', 'comment', '--body-file', '../c1.md']).code, 0);
+  assert.equal(slipway(wt, ['forge', 'comment', '--body-file', '../c2.md']).code, 0);
+  assert.equal(slipway(wt, ['forge', 'comments']).stdout, 'D1.1 reviewed: clean\nD1.2 reviewed: 2 findings, fixed in abc\n');
+  assert.equal(slipway(repo, ['forge', 'comments']).stdout, '', 'per worktree');
   assert.match(slipway(wt, ['forge', 'run']).stdout, /^off: forge none runs no CI$/m);
   const r = slipway(wt, ['forge', 'merge']);
   assert.equal(r.code, 0, r.stderr);
@@ -67,6 +75,7 @@ if (args[0] === 'pr' && args[1] === 'list') console.log(process.env.FAKE_OPEN ??
 else if (args[0] === 'pr' && args[1] === 'create') console.log('https://github.com/o/r/pull/9');
 else if (args[0] === 'run' && args[1] === 'list') console.log(JSON.stringify([{ headSha: ${JSON.stringify(head)}, status: 'completed', conclusion: 'failure', url: 'https://run/1', databaseId: 1 }]));
 else if (args[0] === 'run' && args[1] === 'view') console.log('the failing log');
+else if (args[0] === 'pr' && args[1] === 'view') console.log(JSON.stringify({ comments: [{ body: 'D2.1 reviewed: clean\\n\\nbody' }, { body: 'note' }] }));
 `,
   );
   writeFileSync(path.join(repo, '..', 'body.md'), 'body');
@@ -82,4 +91,6 @@ else if (args[0] === 'run' && args[1] === 'view') console.log('the failing log')
   assert.match(r.stdout, new RegExp(`^red ${head.slice(0, 12)} https://run/1\\nthe failing log$`, 'm'));
   const runList = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).find((c) => c[1] === 'list' && c[0] === 'run');
   assert.deepEqual(runList.slice(0, 4), ['run', 'list', '--commit', head]);
+  r = slipway(repo, ['forge', 'comments'], { env });
+  assert.equal(r.stdout, 'D2.1 reviewed: clean\nnote\n', r.stderr);
 });
