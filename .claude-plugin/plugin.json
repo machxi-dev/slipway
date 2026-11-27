@@ -1,0 +1,10 @@
+{
+  "name": "slipway",
+  "version": "0.1.0",
+  "description": "A scope → build → ship workflow for Claude Code: decisions as records, one-page plans, one review per step, a branch and a pull request per deliverable.",
+  "author": { "name": "machxi-dev" },
+  "homepage": "https://github.com/machxi-dev/slipway",
+  "repository": "https://github.com/machxi-dev/slipway",
+  "license": "MIT",
+  "engines": { "claude-code": ">=2.1.318" }
+}
