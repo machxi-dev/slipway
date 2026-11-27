@@ -122,7 +122,7 @@ The plugin's scripts have **no dependencies**: Node's standard library only. A g
 - **`/slipway:adr`** — write or supersede a record, and accept a `proposed` one at a step's head.
 - **`/slipway:init [--brownfield]`** — make a repository ready (§3.2, §12).
 
-Six skills at about 3–6 KB each, written as numbered checklists with the governing record's section cited once at the top, no citation chains in the body. Byte ceilings in `docs-check`: `scope`, `build`, `ship` ≤ 6,144 bytes each; `step-builder` ≤ 4,096.
+Six skills at about 3–6 KB each, written as numbered checklists with the governing record's section cited once at the top, no citation chains in the body. Byte ceilings, held by the plugin's own tests, are each skill's and agent's size as measured at v0.2 rounded up to the next 512 bytes: `scope` and `ship` 6,144, `build` 5,632, `step-builder` 4,096 ([measurements](measurements.md)). A file that must grow past its ceiling raises it in the same diff, on purpose.
 
 ### 4.2 Lanes from branches — the operator decides what opens
 
@@ -209,11 +209,13 @@ Each has its own ceiling in `docs-check`. The end state, built for v0.2: the tab
 
 ### 5.1 The process record
 
-Slipway ships **one process record** as a template, about 120 lines, stating the whole method as §2 and §4 have it: lanes from branches, the step check, one review, decisions, the ship, the plugin as the carrier, byte budgets. `init` copies it into a consuming repository as its first record, so a session wanting "the rule" finds one record and one short skill. A repository that already runs the method on a chain of records supersedes the chain with this record, whole, and regenerates its process digest from it — under 12 KB where the chain's digest was 46.
+Slipway ships **one process record** as a template, about 120 lines, stating the whole method as §2 and §4 have it: lanes from branches, the step check, one review, decisions, the ship, the plugin as the carrier, byte budgets. `init` copies it into a consuming repository as its first record, so a session wanting "the rule" finds one record and one short skill. A repository that already runs the method on a chain of records supersedes the chain with this record, whole, and regenerates its process digest from it — under 8 KB where the chain's digest was 46.
 
 ### 5.2 Rule lines live in the records
 
 A record that governs code carries a `## Rules` section: one list item per rule — the topic in bold, the rule's text as a digest line prints it, then `(with: <ids>)` for any further record the line cites and `(areas: <slugs>)` for the digests it joins. The generator reads the records folder, takes the `## Rules` of every record whose status is `accepted`, writes one digest per area in record order, and refuses a line over 120 words. The records stay the source of truth; there is no second file to write. Accepting a record is one status flip, and its rules reach the digests at the next `slipway digest`.
+
+A digest reaches Claude through a rule file in `.claude/rules/`. The general digest's loader, `slipway.md`, imports it with `@` and loads in every session. An area's loader, `slipway-<area>.md`, carries the area's `paths:` and the digest's text **inline**, written by `slipway digest` beside the digest and refused stale by `docs-check` like it; Claude Code loads it when it first works on a file in the area. An import would not do there: Claude Code reads a rule's `@` imports at session start even when the rule has `paths:` — measured at v0.2 ([measurements](measurements.md)) — so every area's digest would be in every session. A loader written by v0.1 imports its digest; the next `slipway digest` rewrites it.
 
 ## 6. Models by role
 
@@ -231,17 +233,20 @@ Two cautions from the docs: a subagent on a different model does not inherit the
 
 ## 7. The budget
 
-Estimates from file sizes at about four bytes a token; the method's first home as the baseline, Slipway as the target. `slipway report` prints a step's actual fixed load, and v0.2's done-when is that figure under 40 KB.
+The method's first home is the baseline. The ceilings are what `docs-check` and the plugin's tests hold, set so that a step reaching one area stays under 40 KB of fixed load even with every file at its ceiling; the measured column is two lanes on the scratch repository at v0.2 ([measurements](measurements.md)). `slipway report` prints a step's fixed load, file by file, and `--check` fails it over 40 KB; v0.2's done-when is that figure under 40 KB.
 
-| What a fresh step builder loads before reading code | Baseline | Slipway |
-| --- | --- | --- |
-| Always-on: `CLAUDE.md`, rule loaders | 6 KB + 1–4 KB | 4 KB + 1 KB |
-| The procedure | a loop prompt 1.5 KB + a step skill 13.2 KB | `step-builder` body 4 KB |
-| Process rules | a 46 KB digest | ≤ 12 KB |
-| Area rules | 14–62 KB per area, more when adding to a shared list | ≤ 32 KB per area, a 120-word cap on new lines |
-| The plan | the whole file, 20–40 KB | the step's section, 2–5 KB, plus the header |
-| Fixed load | ≈ 120 KB (≈ 30k tokens), up to 200 KB | ≈ 40 KB (≈ 10k tokens) |
-| Skill descriptions every session carries for the process | 6 skills × up to 1.5k characters | 0 (`disable-model-invocation`) |
+| What a fresh step builder loads before reading code | Baseline | Ceiling | Measured at v0.2 |
+| --- | --- | --- | --- |
+| Always-on: `CLAUDE.md`, the general rule loader | 6 KB + 1–4 KB | 4 KB + 1 KB | 0.3 KB + 0.15 KB |
+| The procedure | a loop prompt 1.5 KB + a step skill 13.2 KB | `step-builder` body 4 KB | 3.6 KB |
+| Process rules | a 46 KB digest | ≤ 8 KB | 1.8 KB |
+| Area rules | 14–62 KB per area, more when adding to a shared list | ≤ 12 KB per area the step's paths reach, a 120-word cap on new lines; inline in the loader, so no other area's (§5.2) | 0.2–0.45 KB |
+| The plan | the whole file, 20–40 KB | the header and the step's section, about 4 KB | 0.9–1.2 KB |
+| Conventions skills | in the step skill | about 6 KB, the repository's own | 0.5 KB |
+| Fixed load | ≈ 120 KB, up to 200 KB | ≤ 40 KB for a step reaching one area | 7.7–8.2 KB |
+| Skill descriptions every session carries for the process | 6 skills × up to 1.5k characters | 0 (`disable-model-invocation`) | 0 |
+
+The process's prose measured about 2.5 bytes a token, not the four first assumed, so 40 KB is about 16k tokens and the measured load about 3k. Claude Code's own load for a subagent with the builder's tools — its system prompt, tool definitions, environment and the session's skill listing — came to about 12k tokens on the same runs and is not Slipway's to cut.
 
 The records a step names and the spec are unchanged and are the right thing to spend tokens on.
 
@@ -268,7 +273,7 @@ The repository works in two stages, because the plugin cannot run itself before 
 
 **v0.1 — the simplified process, built from this document.** The plugin is written from the design, not extracted from another repository; the method's first home is reference reading only, for what each step does in practice and which edge cases its tests guard. It is built under plain Claude Code, because it cannot run itself before it exists: conventional commits on short branches, the built-in `/ship` to commit, open the pull request and watch it, `/code-review` on the diff. The gate is `node --test` and `claude plugin validate . --strict`, in a workflow that runs in seconds, so CI is simply on. Releases are semver tags. The content is §4 directly: the six commands — `plan`, `scope`, `build`, `ship`, `adr`, `init` — under their byte ceilings (§4.1); the agents of §3.2 with models by role (§6); lanes from branches (§4.2); the narrative in commit bodies and the decisions file (§4.3); `build` on Claude Code's primitives (§4.4); `ship` in nine steps with `release` (§4.5); `CI:` per lane (§4.6); the three-file ledger (§4.7); the scripts behind `slipway` and the config schema; the repository as its own marketplace; and the two spikes of §11 first. Done when `claude plugin validate . --strict` and `node --test` are green; when one throwaway deliverable in a scratch repository is taken through `/slipway:init`, `plan`, `scope`, `build` and `ship` end to end, once with `forge: none` and once with `forge: github` on a private scratch repository; and when `/slipway:init --brownfield` has run on this repository with the config below in place. Tag `v0.1.0`.
 
-**v0.2 — measured, developed with the plugin itself.** From the end of v0.1 every change to this repository is a lane run on the plugin (`claude --plugin-dir .` loads the working copy). Two changes make v0.2. The ledger table is **generated from the plan files' headers**, with `docs-check` refusing it stale (§4.7's end state), so the ledger stops being a merge surface and a branch-first `scope` is conflict-free. And the ceilings come down to measured figures: the first lanes on v0.1 record their steps' wall time, the builder's token use and `slipway report`'s fixed load; the numbers go in the changelog, and the ceilings of §4.1 and §7 are lowered to what was measured. Done when a deliverable of this repository is scoped, built and shipped with the generated table and `slipway report` prints a step's fixed load under 40 KB; tag `v0.2.0`.
+**v0.2 — measured, developed with the plugin itself.** From the end of v0.1 every change to this repository is a lane run on the plugin (`claude --plugin-dir .` loads the working copy). Two changes make v0.2. The ledger table is **generated from the plan files' headers**, with `docs-check` refusing it stale (§4.7's end state), so the ledger stops being a merge surface and a branch-first `scope` is conflict-free. And the ceilings come down to measured figures: the first lanes on v0.1 record their steps' wall time, the builder's token use and `slipway report`'s fixed load; the numbers go in the changelog and [measurements](measurements.md), and the ceilings of §4.1 and §7 are lowered to what was measured. Done when a deliverable of this repository is scoped, built and shipped with the generated table and `slipway report` prints a step's fixed load under 40 KB; tag `v0.2.0`.
 
 Three kinds of consumer prove §12's claims: this repository, from the end of v0.1; the method's first home, the first brownfield consumer, when it adopts Slipway by §13.5; and a new repository of the operator's own, the second greenfield case.
 
@@ -387,7 +392,8 @@ slipway/                             the repository; also its own marketplace
   scripts/*.mjs, scripts/*.test.mjs  dependency-free Node 20; `node --test`
   templates/                         ledger.md, roadmap.md, shipped.md, record.md, process-record.md, plan.md,
                                      decisions.md, slipway.config.json, rules-loader.md, settings-fragment.json
-  docs/design.md                     this document; docs/spikes/ the two spikes' outcomes
+  docs/design.md                     this document; docs/spikes/ the two spikes' outcomes;
+                                     docs/measurements.md the fixed load measured on real lanes
   README.md  CHANGELOG.md  LICENSE
   .github/workflows/test.yml         node --test, `claude plugin validate .` --strict
 ```

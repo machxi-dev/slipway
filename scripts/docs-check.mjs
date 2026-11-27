@@ -194,6 +194,9 @@ function checkBudget(root, files, text, bad) {
     const ceiling = exact ? exact[1] : globs.length ? Math.min(...globs) : null;
     if (ceiling === null) continue;
     const size = statSync(path.join(root, f)).size;
-    if (size > ceiling) bad(f, 0, `${size} bytes, over its ceiling of ${ceiling} in ${BUDGET_FILE}`);
+    // Since 0.2 an area's loader holds its digest inline; a 0.1 budget caps every rule file at 1 KB.
+    const split = !exact && /^\.claude\/rules\/slipway-[^/]+\.md$/.test(f) && valid.some(([k, v]) => k === '.claude/rules/*.md' && v === ceiling);
+    const hint = split ? '; an area loader holds its digest since 0.2: give .claude/rules/slipway-*.md its own entry (CHANGELOG 0.2)' : '';
+    if (size > ceiling) bad(f, 0, `${size} bytes, over its ceiling of ${ceiling} in ${BUDGET_FILE}${hint}`);
   }
 }

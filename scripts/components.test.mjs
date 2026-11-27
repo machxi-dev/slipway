@@ -6,8 +6,22 @@ import path from 'node:path';
 import { PLUGIN_ROOT } from './testing.mjs';
 
 const SKILLS = ['plan', 'scope', 'build', 'ship', 'adr', 'init'];
-const CEILINGS = { 'skills/scope/SKILL.md': 6144, 'skills/build/SKILL.md': 6144, 'skills/ship/SKILL.md': 6144, 'agents/step-builder.md': 4096 };
-const DEFAULT_CEILING = 6144;
+// Each file's size measured at v0.2, rounded up to the next 512 bytes (docs/measurements.md). A file that must grow
+// past its ceiling raises it here, in the same diff, on purpose.
+const CEILINGS = {
+  'skills/plan/SKILL.md': 3072,
+  'skills/scope/SKILL.md': 6144,
+  'skills/build/SKILL.md': 5632,
+  'skills/ship/SKILL.md': 6144,
+  'skills/adr/SKILL.md': 4608,
+  'skills/init/SKILL.md': 5120,
+  'agents/step-builder.md': 4096,
+  'agents/code-reviewer.md': 2560,
+  'agents/adr-reviewer.md': 2560,
+  'agents/security-reviewer.md': 2560,
+  'agents/gate-runner.md': 2048,
+  'agents/adr-author.md': 1536,
+};
 
 /** The frontmatter's top-level scalar keys; lists and nested values are kept as their raw text. */
 export function frontmatter(text) {
@@ -43,7 +57,8 @@ test('skills and agents stay under their byte ceilings (§4.1)', () => {
   const files = [...skillDirs().map((d) => `skills/${d}/SKILL.md`), ...agentFiles().map((f) => `agents/${f}`)];
   for (const f of files) {
     const size = statSync(path.join(PLUGIN_ROOT, f)).size;
-    const ceiling = CEILINGS[f] ?? DEFAULT_CEILING;
+    const ceiling = CEILINGS[f];
+    assert.ok(ceiling, `${f} has no ceiling; give it one in CEILINGS`);
     assert.ok(size <= ceiling, `${f} is ${size} bytes, over its ceiling of ${ceiling}`);
   }
 });

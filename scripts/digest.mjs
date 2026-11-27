@@ -40,7 +40,8 @@ export function parseRules(text) {
 export const wordCount = (rule) => `${rule.topic} ${rule.text}`.split(/\s+/).filter(Boolean).length;
 
 /**
- * Render every digest: general, then one per area. Returns { digests: { name: { file, text } }, problems }.
+ * Render every digest: general, then one per area, then each area's loader under `loader:<area>`.
+ * Returns { digests: { name: { file, text } }, problems }.
  * `template` is templates/digest.md.
  */
 export function renderDigests(root, config, template) {
@@ -50,7 +51,8 @@ export function renderDigests(root, config, template) {
   const areas = Object.keys(config.areas);
   const lines = { general: [] };
   for (const a of areas) lines[a] = [];
-  const link = (r) => `[${r.number ?? r.file}](${posix(path.relative(path.join(root, config.docs.digests), path.join(recordsDir, r.file)))})`;
+  // A digest's links are relative to the folder it is written in: the digests' folder, or .claude/rules for a loader.
+  const link = (r, from) => `[${r.number ?? r.file}](${posix(path.relative(path.join(root, from), path.join(recordsDir, r.file)))})`;
   for (const r of records.filter((x) => x.status === 'accepted')) {
     const where = posix(path.join(config.docs.records, r.file));
     for (const rule of parseRules(r.text)) {
@@ -69,21 +71,32 @@ export function renderDigests(root, config, template) {
         }
       }
       for (const a of rule.areas) if (!areas.includes(a)) problems.push(`${where}:${rule.line}: (areas: ${a}) is not an area in slipway.config.json`);
-      const cite = [link(r), ...cited.map((c) => `with ${link(c)}`)].join(', ');
-      const out = `- **${rule.topic}** ${rule.text} (${cite})`;
+      const out = (from) => `- **${rule.topic}** ${rule.text} (${[link(r, from), ...cited.map((c) => `with ${link(c, from)}`)].join(', ')})`;
       const targets = rule.areas.filter((a) => areas.includes(a));
       for (const t of targets.length ? targets : ['general']) lines[t].push(out);
     }
   }
-  const digests = {};
-  for (const name of ['general', ...areas]) {
+  const render = (name, from) => {
     const scope = name === 'general' ? 'the whole repository' : `the \`${name}\` area`;
-    const rules = lines[name].length ? lines[name].join('\n') : 'No rules yet.';
+    const rules = lines[name].length ? lines[name].map((out) => out(from)).join('\n') : 'No rules yet.';
     const text = template.replaceAll('{{area}}', () => name).replaceAll('{{scope}}', () => scope).replaceAll('{{rules}}', () => rules);
-    digests[name] = { file: posix(path.join(config.docs.digests, `${name}.md`)), text: text.replace(/\n*$/, '\n') };
+    return text.replace(/\n*$/, '\n');
+  };
+  const digests = {};
+  for (const name of ['general', ...areas]) digests[name] = { file: posix(path.join(config.docs.digests, `${name}.md`)), text: render(name, config.docs.digests) };
+  // An area's loader carries its digest inline. Claude Code reads an @ import at session start even in a rule
+  // with `paths:`, so an imported area digest would load in every session; inline, it loads only when Claude
+  // works on a file in the area (§5.2, §7).
+  for (const a of areas) {
+    const file = areaLoader(a);
+    digests[`loader:${a}`] = { file, text: `${loaderFrontmatter(config.areas[a].paths)}${render(a, path.posix.dirname(file))}` };
   }
   return { digests, problems };
 }
+
+/** The path-scoped rule file that loads an area's rules (§5.2). */
+export const areaLoader = (area) => `.claude/rules/slipway-${area}.md`;
+const loaderFrontmatter = (paths) => `---\npaths:\n${paths.map((p) => `  - ${JSON.stringify(p)}`).join('\n')}\n---\n\n`;
 
 /** Run the repository's formatter over files, when it names one (§3.3). */
 export function format(root, config, files) {

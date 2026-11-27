@@ -6,13 +6,13 @@ import { repoRoot } from './git.mjs';
 import { runCommand } from './run.mjs';
 import { init, parseInitArgs } from './init.mjs';
 import { acceptRecord, newRecord } from './records.mjs';
-import { addRow, findLane, generateLedger, nextDeliverable, overlapWarnings, parseLaneArg, setStatus, shipRow, skillsFor } from './lane.mjs';
-import { stepText } from './plan.mjs';
+import { addRow, findLane, generateLedger, nextDeliverable, overlapWarnings, parseLaneArg, setStatus, shipRow, stepBrief } from './lane.mjs';
 import { digest } from './digest.mjs';
 import { docsCheck } from './docs-check.mjs';
 import { makeWorktree, removeWorktree } from './worktree.mjs';
 import { forge } from './forge.mjs';
 import { bump, tag } from './release.mjs';
+import { TARGET, fixedLoad, formatReport } from './report.mjs';
 
 const USAGE = `usage: slipway <verb> [args]
 
@@ -38,6 +38,9 @@ const USAGE = `usage: slipway <verb> [args]
   ledger generate [--check]
                          write the ledger's table from the plans' headers and the roadmap's planned
                          entries (or say it is stale); a merge conflict in the table is resolved by this
+  report [D<n>[.<k>]] [--step <k>] [--check]
+                         a step builder's fixed load, in bytes by part (default: the lane's next step);
+                         --check exits 1 when it is over the 40 KB target
   digest [--check]       write the digests from the accepted records' rules (or say which are stale)
   docs-check             the ledger, plans, decisions, records, digests, specs and byte budgets
   worktree [D<n>]        make the lane's worktree, copy lane.copy into it and run lane.setup
@@ -150,15 +153,9 @@ const verbs = {
     const want = opts.step ?? (lane.k !== null ? String(lane.k) : undefined);
     if (want !== undefined) {
       const k = want === 'next' ? next?.k : Number(want);
-      const text = k === undefined ? null : stepText(lane.plan, k);
-      if (!text) throw new UsageError(want === 'next' ? `every step of D${lane.n} is built` : `D${lane.n} has no step ${want}`);
-      const step = lane.plan.steps.find((s) => s.k === k);
-      const skills = skillsFor(config, step.fields.Paths ?? '');
-      out(text);
-      out('');
-      out(`Lane branch: ${lane.branch}${lane.current === lane.branch ? '' : ` (checked out: ${lane.current ?? 'detached'})`}`);
-      out(`Decisions file: ${lane.decisionsFile}`);
-      out(`Conventions skills: ${skills.length ? skills.join(', ') : 'none'}`);
+      const brief = k === undefined ? null : stepBrief(config, lane, k);
+      if (!brief) throw new UsageError(want === 'next' ? `every step of D${lane.n} is built` : `D${lane.n} has no step ${want}`);
+      out(brief.text);
       return 0;
     }
     const open = lane.decisions.filter((d) => d.open).length;
@@ -171,6 +168,18 @@ const verbs = {
     out(`worktree: ${lane.worktree}`);
     out(`steps: ${built} of ${lane.plan.steps.length} built${next ? `; next: ${next.k}. ${next.title}` : ''}`);
     return 0;
+  },
+  async report(args, { cwd, pluginRoot, out }) {
+    const { root, config } = setup(cwd);
+    const { opts, rest } = options(args, { values: ['step'], flags: ['check'] });
+    const lane = findLane(root, config, rest[0]);
+    if (!lane.plan) throw new UsageError(`D${lane.n} has no plan at ${lane.planFile}; /slipway:scope writes it`);
+    const want = opts.step ?? (lane.k !== null ? String(lane.k) : 'next');
+    const k = want === 'next' ? lane.plan.steps.find((s) => !s.built)?.k : Number(want);
+    const load = k === undefined ? null : fixedLoad(root, config, lane, k, pluginRoot);
+    if (!load) throw new UsageError(want === 'next' ? `every step of D${lane.n} is built; name one as D${lane.n}.<k>` : `D${lane.n} has no step ${want}`);
+    for (const line of formatReport(lane, load)) out(line);
+    return opts.check && load.total > TARGET ? 1 : 0;
   },
   async ledger(args, { cwd, out, err }) {
     const { root, config } = setup(cwd);
