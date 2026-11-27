@@ -59,6 +59,7 @@ export function normalize(raw, file = CONFIG_FILE) {
   known(raw, '', ['$schema', 'version', 'defaultBranch', 'forge', 'tagPrefix', 'docs', 'lane', 'commands', 'locks', 'ci', 'release', 'merge', 'areas']);
 
   if (raw.version !== 1) bad('version', 'must be 1');
+  const defaultBranch = str(raw.defaultBranch, 'defaultBranch', 'main');
   const forge = oneOf(raw.forge, 'forge', FORGES, 'github');
 
   const docsIn = section(raw.docs, 'docs');
@@ -90,14 +91,16 @@ export function normalize(raw, file = CONFIG_FILE) {
       if (!isString(cmd)) bad(`commands.${name}`, 'must be a non-empty string');
       commands[name] = cmd;
     }
-    for (const name of REQUIRED_COMMANDS) if (!(name in raw.commands)) bad(`commands.${name}`, 'required');
+    for (const name of REQUIRED_COMMANDS) if (!Object.hasOwn(raw.commands, name)) bad(`commands.${name}`, 'required');
   }
 
   const locksIn = section(raw.locks, 'locks');
   known(locksIn, 'locks', ['tiers']);
   const locks = { tiers: strings(locksIn.tiers, 'locks.tiers', []) };
   if (Array.isArray(locks.tiers)) {
-    for (const name of locks.tiers) if (isString(name) && !(name in commands)) bad('locks.tiers', `"${name}" is not a command`);
+    for (const name of locks.tiers) {
+      if (isString(name) && !Object.hasOwn(commands, name)) bad('locks.tiers', `"${name}" is not a command`);
+    }
   }
 
   const ciIn = section(raw.ci, 'ci');
@@ -148,7 +151,7 @@ export function normalize(raw, file = CONFIG_FILE) {
   if (problems.length) throw new ConfigError(file, problems);
   return {
     version: 1,
-    defaultBranch: str(raw.defaultBranch, 'defaultBranch', 'main'),
+    defaultBranch,
     forge,
     tagPrefix,
     docs,
@@ -191,7 +194,7 @@ const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function laneFromBranch(config, branch) {
   if (!branch) return null;
   const [before, after] = config.lane.branch.split('{n}');
-  const m = new RegExp(`^${escapeRegExp(before)}(\\d+)${escapeRegExp(after)}$`).exec(branch);
+  const m = new RegExp(`^${escapeRegExp(before)}(0|[1-9]\\d*)${escapeRegExp(after)}$`).exec(branch);
   if (!m) return null;
   const n = Number(m[1]);
   return { n, id: `d${n}` };

@@ -8,6 +8,9 @@ import { commonDir } from './git.mjs';
 
 export const lockPath = (cwd) => path.join(commonDir(cwd), 'slipway', 'lock');
 
+/** Set in a locked command's environment to the holder's token, so a nested locked run does not wait on itself. */
+export const HELD = 'SLIPWAY_LOCK_TOKEN';
+
 const POLL_MS = 250;
 const UNREADABLE_GRACE_MS = 10_000;
 
@@ -31,6 +34,7 @@ function readOwner(file) {
 
 /** A holder is stale when it ran on this machine and its process is gone, or its file stayed unreadable. */
 function stale(file, owner) {
+  if (owner === undefined) return false;
   if (owner === null) {
     try {
       return Date.now() - statSync(file).mtimeMs > UNREADABLE_GRACE_MS;
@@ -47,8 +51,9 @@ const describe = (o) =>
 /**
  * Take the lock, waiting while another live process holds it. Resolves to a release function.
  * timeoutMs: undefined waits for ever; 0 fails at once when the lock is held.
+ * The release function carries the holder's `token`, for the HELD variable.
  */
-export async function acquire(cwd, command, { timeoutMs, onWait = () => {} } = {}) {
+export async function acquire(cwd, command, { timeoutMs, onWait = () => {}, heldAbove = process.env[HELD] } = {}) {
   const file = lockPath(cwd);
   mkdirSync(path.dirname(file), { recursive: true });
   const token = randomUUID();
@@ -64,10 +69,17 @@ export async function acquire(cwd, command, { timeoutMs, onWait = () => {} } = {
     }
     const owner = readOwner(file);
     if (owner === undefined) continue;
+    if (owner && heldAbove && owner.token === heldAbove) {
+      // A locked command running `slipway run` for another locked command: the lock is already ours.
+      const nested = () => {};
+      nested.token = heldAbove;
+      return nested;
+    }
     if (stale(file, owner)) {
-      // Re-read just before removing, so a waiter that already replaced the stale file keeps its lock.
+      // Judge the file again just before removing it, so a waiter that already replaced it keeps its lock.
       const again = readOwner(file);
-      if (again === owner || (again && owner && again.token === owner.token)) {
+      const same = owner === null ? again === null : again?.token === owner.token;
+      if (same && stale(file, again)) {
         try {
           unlinkSync(file);
         } catch {}
@@ -86,7 +98,9 @@ export async function acquire(cwd, command, { timeoutMs, onWait = () => {} } = {
     await sleep(POLL_MS);
   }
   let released = false;
-  return function release() {
+  release.token = token;
+  return release;
+  function release() {
     if (released) return;
     released = true;
     if (readOwner(file)?.token === token) {
@@ -94,5 +108,5 @@ export async function acquire(cwd, command, { timeoutMs, onWait = () => {} } = {
         unlinkSync(file);
       } catch {}
     }
-  };
+  }
 }

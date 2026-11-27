@@ -71,21 +71,24 @@ test('every problem is reported at once, with its path', () => {
     docs: { records: '' },
     lane: { branch: 'lane/D', setup: 3 },
     commands: { check: 'c', 'step-check': 's', gate: 'g', Bad: 'x' },
-    locks: { tiers: ['nope'] },
+    locks: { tiers: ['nope', 'toString'] },
     ci: { default: 'sometimes' },
     merge: 'rebase',
+    defaultBranch: 5,
     areas: { web: { skills: ['x'] } },
     extra: true,
   });
   assert.deepEqual(problems, [
     'extra: unknown key',
     'version: must be 1',
+    'defaultBranch: must be a non-empty string',
     'forge: must be one of "github", "none"',
     'docs.records: must be a non-empty string',
     'lane.setup: must be a non-empty string or null',
     'lane.branch: must contain {n} exactly once',
     'commands.Bad: a command name is lower-case letters, digits and hyphens',
     'locks.tiers: "nope" is not a command',
+    'locks.tiers: "toString" is not a command',
     'ci.default: must be one of "on", "at-ship", "off"',
     'merge: must be one of "merge-commit", "squash"',
     'areas.web.paths: required',
@@ -113,6 +116,8 @@ test('lanes are read from branch names through the lane.branch pattern', () => {
   assert.deepEqual(laneFromBranch(c, 'lane/D45'), { n: 45, id: 'd45' });
   assert.equal(laneFromBranch(c, 'main'), null);
   assert.equal(laneFromBranch(c, 'lane/D45-x'), null);
+  assert.equal(laneFromBranch(c, 'lane/D045'), null);
+  assert.deepEqual(laneFromBranch(c, 'lane/D0'), { n: 0, id: 'd0' });
   assert.equal(laneFromBranch(c, 'xlane/D45'), null);
   assert.equal(laneBranch(c, 7), 'lane/D7');
   const dotted = normalize({ ...minimal(), lane: { branch: 'work.{n}+x' } });

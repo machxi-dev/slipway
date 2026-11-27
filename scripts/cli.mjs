@@ -35,9 +35,11 @@ const verbs = {
       }
       return 0;
     }
-    const t = process.env.SLIPWAY_LOCK_TIMEOUT;
-    const lockTimeoutMs = t === undefined || t === '' ? undefined : Number(t) * 1000;
-    if (Number.isNaN(lockTimeoutMs)) throw new UsageError('SLIPWAY_LOCK_TIMEOUT must be a number of seconds');
+    const t = (process.env.SLIPWAY_LOCK_TIMEOUT ?? '').trim();
+    const lockTimeoutMs = t === '' ? undefined : Number(t) * 1000;
+    if (lockTimeoutMs !== undefined && !(Number.isFinite(lockTimeoutMs) && lockTimeoutMs >= 0)) {
+      throw new UsageError('SLIPWAY_LOCK_TIMEOUT must be a number of seconds, 0 or more');
+    }
     return runCommand({ root, config, name, args: rest, pluginRoot, log: err, lockTimeoutMs });
   },
   async config(args, { cwd, out }) {
@@ -57,7 +59,7 @@ export async function main(argv, { pluginRoot, cwd = process.cwd(), out = consol
     (verb ? out : err)(USAGE);
     return verb ? 0 : 2;
   }
-  if (verb === '--version') return verbs.version(args, { pluginRoot, out });
+  if (verb === '--version') return main(['version', ...args], { pluginRoot, cwd, out, err });
   const fn = Object.hasOwn(verbs, verb) ? verbs[verb] : undefined;
   if (!fn) {
     err(`slipway: unknown verb "${verb}"\n\n${USAGE}`);

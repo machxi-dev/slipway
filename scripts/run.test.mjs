@@ -42,6 +42,15 @@ test('a command runs from the repository root with the SLIPWAY_* variables', (t)
   });
 });
 
+test('a SLIPWAY_BRANCH or SLIPWAY_LANE inherited from an outer run is not passed on when it does not apply', (t) => {
+  const { repo, out, env } = setup(t);
+  git(repo, 'checkout', '-q', '--detach');
+  const r = slipway(repo, ['run', 'check'], { env: { ...env, SLIPWAY_BRANCH: 'lane/D9', SLIPWAY_LANE: 'd9' } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(probed(out).env.SLIPWAY_BRANCH, undefined);
+  assert.equal(probed(out).env.SLIPWAY_LANE, undefined);
+});
+
 test('on a lane branch SLIPWAY_LANE names the lane; on a detached HEAD there is no branch', (t) => {
   const { repo, out, env } = setup(t);
   git(repo, 'checkout', '-q', '-b', 'lane/D45');
@@ -56,7 +65,7 @@ test('on a lane branch SLIPWAY_LANE names the lane; on a detached HEAD there is 
 
 test('extra arguments reach the command intact through the platform shell', (t) => {
   const { repo, out, env } = setup(t);
-  const args = ['plain', 'two words', "it's", 'semi;colon', 'a&b', '$HOME', 'x"y', ''];
+  const args = ['plain', 'two words', "it's", 'semi;colon', 'a&b', '$HOME', 'x"y', '', '%PATH%', '100%', 'C:\\dir\\f.txt'];
   const r = slipway(repo, ['run', 'check', ...args], { env });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(probed(out).args, args);
@@ -90,6 +99,12 @@ test('usage problems exit 2 with a plain message', (t) => {
   let r = slipway(repo, ['run', 'deploy']);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /no command "deploy" in slipway.config.json; it names: check, step-check, gate/);
+  r = slipway(repo, ['run', 'constructor']);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /no command "constructor"/);
+  r = slipway(repo, ['run', 'gate'], { env: { SLIPWAY_LOCK_TIMEOUT: 'soon' } });
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /SLIPWAY_LOCK_TIMEOUT must be a number of seconds/);
   r = slipway(repo, ['frobnicate']);
   assert.equal(r.code, 2);
   assert.match(r.stderr, /unknown verb "frobnicate"/);
@@ -115,4 +130,6 @@ test('quoteArg leaves plain words alone and quotes the rest for each shell', () 
   assert.equal(quoteArg('', 'linux'), `''`);
   assert.equal(quoteArg('two words', 'win32'), '"two words"');
   assert.equal(quoteArg('x"y', 'win32'), '"x""y"');
+  assert.equal(quoteArg('%PATH%', 'win32'), '""^%"PATH"^%""');
+  assert.equal(quoteArg('C:\\a\\b', 'win32'), 'C:\\a\\b');
 });

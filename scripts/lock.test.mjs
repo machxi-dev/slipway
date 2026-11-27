@@ -106,6 +106,60 @@ test('release removes only its own lock', async (t) => {
   assert.equal(existsSync(lock), true);
 });
 
+test('a locked command that runs another locked command does not wait on itself', { timeout: 30_000 }, async (t) => {
+  const { repo, lock } = setup(t);
+  const config = JSON.parse(readFileSync(path.join(repo, 'slipway.config.json'), 'utf8'));
+  config.commands.gate = 'node nested.mjs';
+  config.commands['step-check'] = 'node see-lock.mjs';
+  config.locks.tiers = ['step-check', 'gate'];
+  writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(config));
+  writeFileSync(
+    path.join(repo, 'nested.mjs'),
+    `import { spawnSync } from 'node:child_process';\n` +
+      `const r = spawnSync(process.execPath, [${JSON.stringify(BIN)}, 'run', 'step-check'], { stdio: 'inherit' });\n` +
+      `process.exit(r.status);\n`,
+  );
+  const r = slipway(repo, ['run', 'gate'], { env: { LOCK_FILE: lock } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'lock held: true');
+  assert.equal(existsSync(lock), false);
+});
+
+test(
+  'a signal to slipway stops the whole command before the lock is released',
+  { skip: process.platform === 'win32' && 'POSIX process groups', timeout: 30_000 },
+  async (t) => {
+    const { repo, lock } = setup(t);
+    const config = JSON.parse(readFileSync(path.join(repo, 'slipway.config.json'), 'utf8'));
+    // Two commands joined by && keep the shell alive above the long-running grandchild.
+    config.commands.gate = 'node -e "0" && node sleeper.mjs';
+    writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(config));
+    const pidFile = path.join(repo, 'sleeper.pid');
+    writeFileSync(
+      path.join(repo, 'sleeper.mjs'),
+      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`,
+    );
+    const child = spawn(process.execPath, [BIN, 'run', 'gate'], { cwd: repo, stdio: 'ignore' });
+    const exited = new Promise((resolve) => child.on('exit', (code, signal) => resolve({ code, signal })));
+    await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8') !== '');
+    const sleeper = Number(readFileSync(pidFile, 'utf8'));
+    assert.equal(existsSync(lock), true);
+    child.kill('SIGTERM');
+    const { code } = await exited;
+    assert.equal(code, 128 + 15);
+    assert.equal(existsSync(lock), false);
+    const gone = () => {
+      try {
+        process.kill(sleeper, 0);
+        return false;
+      } catch (err) {
+        return err.code === 'ESRCH';
+      }
+    };
+    await until(gone, 5_000);
+  },
+);
+
 async function until(cond, ms = 10_000) {
   const end = Date.now() + ms;
   while (!cond()) {
