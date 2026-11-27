@@ -19,7 +19,7 @@ This record restates the process with those three changes. The rest of 0001 stan
 **What changes.**
 
 - **A step's commits.** A step is one commit, plus at most one follow-up commit, `fix(<scope>): D<n>.<k> review findings`, that fixes its review's confirmed findings. A merge of the default branch that the builder makes before building, and a fix-forward at the ship, are their own commits and belong to no step. The step commit carries the trailers. The findings commit names the findings it fixes.
-- **One proof at the ship.** Before the ship commit, the ship runs `slipway docs-check` and no other command. Then `slipway run gate`, under the lock on that commit, is the ship's one proof, along with the CI run on the same head where the lane's `CI:` asks for one.
+- **One proof at the ship.** Before the ship commit, the ship runs `slipway docs-check` and no other check. Amended 2026-11-28 (D3.1). "No other command" became "no other check": the ship commit's own steps, `slipway digest`, the version bump and `slipway ledger ship`, are commands. Then `slipway run gate`, under the lock on that commit, is the ship's one proof, along with the CI run on the same head where the lane's `CI:` asks for one.
 - **Branch-first.** Nothing is committed on the default branch except the ship's merge.
   - `/slipway:scope` cuts the lane branch from the default branch before it writes, and commits and pushes the plan, its decisions file and its `proposed` records there. Opening the lane then moves its row to `in progress` on that same branch and opens the draft pull request. A plan whose lane is not yet opened lives on its pushed lane branch.
   - `/slipway:plan` commits its rows on the lane branch of the first row it adds, which that row's scope then takes up.

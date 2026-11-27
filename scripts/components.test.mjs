@@ -10,7 +10,7 @@ const SKILLS = ['plan', 'scope', 'build', 'ship', 'adr', 'init'];
 // past its ceiling raises it here, in the same diff, on purpose.
 const CEILINGS = {
   'skills/plan/SKILL.md': 3072,
-  'skills/scope/SKILL.md': 6144,
+  'skills/scope/SKILL.md': 6656, // raised in D3.1: branch-first scope reads rows on the lane branches too
   'skills/build/SKILL.md': 5632,
   'skills/ship/SKILL.md': 6144,
   'skills/adr/SKILL.md': 4608,
