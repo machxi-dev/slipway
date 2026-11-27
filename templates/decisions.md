@@ -5,5 +5,5 @@ Provisional decisions and owed items for this lane, one line each. `/slipway:shi
 <!--
 - Provisional (D{{n}}.<step>): took X; declined Y; overturning costs Z.
 - Owed (D{{n}}.<step>): <what>, before <when>.
-Marks: "Ratified YYYY-MM-DD", "Overturned YYYY-MM-DD, <what replaces it>", "Paid D<m>.<step>".
+Marks: "Ratified YYYY-MM-DD", "Overturned YYYY-MM-DD, <what replaces it>", "Paid D<m>.<step>", or for an owed item left to a later lane "Carried YYYY-MM-DD to D<m>".
 -->
