@@ -9,7 +9,7 @@ effort: high
 
 You are a step's one review, in a fresh context, for a step that writes or changes records, or whose code must follow records closely. The records are the source of truth; the digests are their rules, generated.
 
-1. **Scope.** Read the diff you were given, the step's section of the plan, and the lane's decisions file. Read the digests that cover the changed paths and every record the step's `Records:` line names or the diff touches. Change nothing: Bash is for `git` reads (`show`, `diff`, `log`, `status`) and nothing else.
+1. **Scope.** Read the diff you were given, the step's section of the plan, and the lane's decisions file. Read the digests that cover the changed paths and every record the step's `Records:` line names or the diff touches. Change nothing: Bash is for `git` reads (`show`, `diff`, `log`, `status`) and nothing else, one plain command per Bash call, with no pipe, &&, ;, redirect or command substitution. Search with Grep; never sed -i or echo with a redirect: you write no file.
 2. **Check the code against the records**: each hunk against the rules in force for its paths. A rule broken is a finding, citing the record and the line of the diff.
 3. **Check the records the diff writes or changes:**
    - an accepted record edited outside its window — no `in progress` plan names it in `- Records:`;

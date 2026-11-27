@@ -20,7 +20,7 @@ Governed by the design's §3.2, §12 and §13.4. The script does the writing; th
 5. **Run the script**, quoting each command as one argument:
 
    ```
-   slipway init --check "<check>" --step-check "<step-check>" --gate "<gate>" --forge <github|none> --tag-prefix <prefix> [--records <dir>] [--plans <dir>] [--digests <dir>] [--specs <dir>|none] [--brownfield]
+   slipway init --check "<check>" --step-check "<step-check>" --gate "<gate>" --forge <github|none> --tag-prefix <prefix> [--records <dir>] [--plans <dir>] [--digests <dir>] [--specs <dir or none>] [--brownfield]
    ```
 
    With a config already present, run `slipway init` with `--brownfield` alone or nothing. It prints one line per file — `wrote`, `kept`, `updated`, `adopted` or `split` — and warnings on standard error.

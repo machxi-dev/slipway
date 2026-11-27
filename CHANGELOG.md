@@ -2,6 +2,12 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
+## Unreleased
+
+### Fixed
+
+- Every command the skills, the agents and the plan template give is one plain command per Bash call, which the permission layer allows: `/slipway:ship` reads `git rev-parse origin/<default>` as its own call after a squash merge and passes the hash to `slipway tag`, instead of substituting it, each agent that runs commands is told to write with Write, change with Edit and search with Grep, and a done-when is a plain command or a test name. A test refuses substitution, expansion, pipes, `&&`, `||`, `;`, redirects, negation, grouping and in-place `sed` in their code spans.
+
 ## 0.2.0 — 2026-11-27
 
 ### Added
