@@ -1,9 +1,13 @@
-// The version bump and the tag (docs/design.md §4.5 step 8, §14).
+// The version bump, the release notes and the tag (docs/design.md §4.5 step 8, §14).
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { releaseTag, releaseTitle } from './config.mjs';
 import { RELEASE_PARTS } from './plan.mjs';
+import { today } from './records.mjs';
+
+export const CHANGELOG = 'CHANGELOG.md';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
 const git = (cwd, args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -38,8 +42,14 @@ function replaceVersion(text, from, to) {
   return null;
 }
 
-/** Bump the release version in versionFile and every file under also. Returns { from, to, tag, files }. */
-export function bump(root, config, part) {
+const UNRELEASED = /^## Unreleased[ \t]*(?=\r?$)/m;
+
+/**
+ * Bump the release version in versionFile and every file under also, and rename a root CHANGELOG.md's
+ * `## Unreleased` heading to `## <version> — <date>`. Nothing is written unless every file can be.
+ * Returns { from, to, tag, title, files }.
+ */
+export function bump(root, config, part, { date = today() } = {}) {
   if (!config.release) throw usage('slipway.config.json has no release block; the tag is <tagPrefix>-D<n>');
   const files = [config.release.versionFile, ...config.release.also];
   const from = readVersion(readFileSync(path.join(root, config.release.versionFile), 'utf8'));
@@ -52,16 +62,56 @@ export function bump(root, config, part) {
     if (text === null) throw usage(`${f} does not hold version ${from}`);
     return [abs, text];
   });
+  const changelog = path.join(root, CHANGELOG);
+  if (existsSync(changelog)) {
+    const text = readFileSync(changelog, 'utf8');
+    if (!UNRELEASED.test(text)) throw usage(`${CHANGELOG} has no "## Unreleased" heading for ${to}`);
+    updated.push([changelog, text.replace(UNRELEASED, `## ${to} — ${date}`)]);
+    files.push(CHANGELOG);
+  }
   for (const [abs, text] of updated) writeFileSync(abs, text);
-  return { from, to, tag: config.release.tag.replace('{version}', to), files };
+  return { from, to, tag: releaseTag(config, to), title: releaseTitle(config, to), files };
+}
+
+/** The version release.versionFile holds now. */
+function currentVersion(root, config) {
+  const v = readVersion(readFileSync(path.join(root, config.release.versionFile), 'utf8'));
+  if (!v) throw usage(`${config.release.versionFile} holds no version`);
+  return v;
+}
+
+/** A changelog's section for one version: the lines under its `## <version>` heading, up to the next. */
+export function changelogSection(text, version) {
+  const lines = text.split(/\r?\n/);
+  const head = new RegExp(`^## ${escape(version)}(?:\\s|$)`);
+  const start = lines.findIndex((l) => head.test(l));
+  if (start < 0) return null;
+  let end = lines.findIndex((l, i) => i > start && l.startsWith('## '));
+  if (end < 0) end = lines.length;
+  return `${lines.slice(start + 1, end).join('\n').trim()}\n`;
+}
+
+/**
+ * The current version's release: { version, tag, title, notes }, where notes is the version's section of a
+ * root CHANGELOG.md, or null when there is no changelog. `out` is written with the notes.
+ */
+export function notes(root, config, { out } = {}) {
+  if (!config.release) throw usage('slipway.config.json has no release block; a <tagPrefix>-D<n> tag has no release');
+  const version = currentVersion(root, config);
+  const changelog = path.join(root, CHANGELOG);
+  let section = null;
+  if (existsSync(changelog)) {
+    section = changelogSection(readFileSync(changelog, 'utf8'), version);
+    if (section === null) throw usage(`${CHANGELOG} has no "## ${version}" section; slipway release bump writes it`);
+    if (out) writeFileSync(out, section);
+  }
+  return { version, tag: releaseTag(config, version), title: releaseTitle(config, version), notes: section };
 }
 
 /** The tag a shipped deliverable gets: `<tagPrefix>-D<n>`, or the release tag of the current version. */
 export function tagName(root, config, n) {
   if (!config.release) return `${config.tagPrefix}-D${n}`;
-  const v = readVersion(readFileSync(path.join(root, config.release.versionFile), 'utf8'));
-  if (!v) throw usage(`${config.release.versionFile} holds no version`);
-  return config.release.tag.replace('{version}', v);
+  return releaseTag(config, currentVersion(root, config));
 }
 
 /**

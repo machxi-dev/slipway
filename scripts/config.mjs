@@ -126,9 +126,10 @@ export function normalize(raw, file = CONFIG_FILE) {
   if (raw.release !== undefined && raw.release !== null) {
     if (!isObject(raw.release)) bad('release', 'must be an object or null');
     else {
-      known(raw.release, 'release', ['tag', 'versionFile', 'also']);
+      known(raw.release, 'release', ['tag', 'title', 'versionFile', 'also']);
       release = {
         tag: str(raw.release.tag, 'release.tag', 'v{version}'),
+        title: str(raw.release.title, 'release.title', '{tag}'),
         versionFile: str(raw.release.versionFile, 'release.versionFile', undefined),
         also: strings(raw.release.also, 'release.also', []),
       };
@@ -210,6 +211,13 @@ export function laneFromBranch(config, branch) {
   const n = Number(m[1]);
   return { n, id: `d${n}` };
 }
+
+/** The release tag of a version: release.tag with {version} filled. */
+export const releaseTag = (config, version) => config.release.tag.replaceAll('{version}', version);
+
+/** The release title of a version: release.title (default `{tag}`) with {version} and {tag} filled. */
+export const releaseTitle = (config, version) =>
+  config.release.title.replaceAll('{tag}', releaseTag(config, version)).replaceAll('{version}', version);
 
 /** The branch name for deliverable n. */
 export const laneBranch = (config, n) => config.lane.branch.replace('{n}', String(n));

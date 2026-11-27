@@ -1,10 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runState } from './forge.mjs';
 import { git, slipway, tempRepo } from './testing.mjs';
+
+const PLAN = readFileSync(new URL('./fixtures/plan.md', import.meta.url), 'utf8');
 
 function ready(t, forge) {
   const origin = tempRepo(t, 'origin');
@@ -76,11 +78,12 @@ test('forge github goes through gh: an open pull request is reused, and a run is
   git(repo, 'checkout', '-q', '-b', 'lane/D2');
   git(repo, 'push', '-q', '-u', 'origin', 'lane/D2');
   const opened = path.join(path.dirname(repo), 'pr-open.log');
-  writeFileSync(path.join(repo, '..', 'body0.md'), 'body');
+  mkdirSync(path.join(repo, 'docs/plan'), { recursive: true });
+  writeFileSync(path.join(repo, 'docs/plan/D2.md'), PLAN);
   // A lane with no commit of its own gets no pull request yet: the forge would refuse an empty one.
   const fake0 = path.join(path.dirname(repo), 'gh0.mjs');
   writeFileSync(fake0, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(opened)}, process.argv.slice(2).join(' ') + '\\n'); if (process.argv[3] === 'list') console.log('[]');\n`);
-  let r0 = slipway(repo, ['forge', 'pr-open', '--title', 't', '--body-file', '../body0.md'], { env: { SLIPWAY_GH: fake0 } });
+  let r0 = slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D2.md'], { env: { SLIPWAY_GH: fake0 } });
   assert.equal(r0.code, 0, r0.stderr);
   assert.match(r0.stdout, /^no commits on lane\/D2 beyond main yet: the pull request opens with the first step$/m);
   assert.doesNotMatch(readFileSync(opened, 'utf8'), /pr create/);
@@ -106,13 +109,12 @@ else if (args[0] === 'run' && args[1] === 'view') console.log('the failing log')
 else if (args[0] === 'pr' && args[1] === 'view') console.log(JSON.stringify({ comments: [{ body: 'D2.1 reviewed: clean\\n\\nbody' }, { body: 'note' }] }));
 `,
   );
-  writeFileSync(path.join(repo, '..', 'body.md'), 'body');
   const env = { SLIPWAY_GH: fake };
-  let r = slipway(repo, ['forge', 'pr-open', '--title', 'D2 — Things', '--body-file', '../body.md'], { env });
+  let r = slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D2.md', '--title', 'D2 — Things'], { env });
   assert.equal(r.stdout.trim(), 'https://github.com/o/r/pull/9', r.stderr);
   const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.deepEqual(calls.at(-1), ['pr', 'create', '--draft', '--base', 'main', '--head', 'lane/D2', '--title', 'D2 — Things', '--body-file', path.resolve(repo, '../body.md')]);
-  r = slipway(repo, ['forge', 'pr-open', '--title', 'x', '--body-file', 'y'], { env: { ...env, FAKE_OPEN: '[{"url":"https://github.com/o/r/pull/8"}]' } });
+  assert.deepEqual(calls.at(-1).slice(0, 9), ['pr', 'create', '--draft', '--base', 'main', '--head', 'lane/D2', '--title', 'D2 — Things']);
+  r = slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D2.md'], { env: { ...env, FAKE_OPEN: '[{"url":"https://github.com/o/r/pull/8"}]' } });
   assert.equal(r.stdout.trim(), 'https://github.com/o/r/pull/8');
   r = slipway(repo, ['forge', 'run', '--log'], { env });
   assert.equal(r.code, 1);
@@ -121,4 +123,45 @@ else if (args[0] === 'pr' && args[1] === 'view') console.log(JSON.stringify({ co
   assert.deepEqual(runList.slice(0, 4), ['run', 'list', '--commit', head]);
   r = slipway(repo, ['forge', 'comments'], { env });
   assert.equal(r.stdout, 'D2.1 reviewed: clean\nnote\n', r.stderr);
+});
+
+test("pr-open --plan builds the body from the plan's goal, steps and CI line", (t) => {
+  const { repo } = ready(t, 'github');
+  git(repo, 'checkout', '-q', '-b', 'lane/D4');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'docs(plan): scope D4');
+  git(repo, 'push', '-q', '-u', 'origin', 'lane/D4');
+  mkdirSync(path.join(repo, 'docs/plan'), { recursive: true });
+  const plan = PLAN.replace('Refund part of an order.', 'Refund part of an order.\n\n- the refund keeps the order <!-- why -->\n\nIn cents.').replace(
+    '## Done when',
+    '## Constraints\n\n- Money is integer cents.\n\n## Done when',
+  );
+  writeFileSync(path.join(repo, 'docs/plan/D4.md'), plan);
+  const log = path.join(path.dirname(repo), 'gh.log');
+  const fake = path.join(path.dirname(repo), 'gh.mjs');
+  // The body file is gone after the call, so the stand-in records what it held.
+  writeFileSync(
+    fake,
+    `import { appendFileSync, readFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+const at = args.indexOf('--body-file');
+appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, body: at < 0 ? null : readFileSync(args[at + 1], 'utf8') }) + '\\n');
+if (args[1] === 'list') console.log('[]');
+else console.log('https://github.com/o/r/pull/4');
+`,
+  );
+  const env = { SLIPWAY_GH: fake };
+  const r = slipway(path.join(repo, 'docs'), ['forge', 'pr-open', '--plan', 'plan/D4.md'], { env });
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout.trim(), 'https://github.com/o/r/pull/4');
+  const create = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).at(-1);
+  assert.deepEqual(create.args.slice(0, 9), ['pr', 'create', '--draft', '--base', 'main', '--head', 'lane/D4', '--title', 'D4 — Refunds']);
+  assert.equal(
+    create.body,
+    'Refund part of an order.\n\n- the refund keeps the order\n\nIn cents.\n\n## Steps\n\n1. The refund model\n2. The refund endpoint\n\nPlan: `docs/plan/D4.md` · CI: `at-ship`\n',
+  );
+  // The body comes from the plan alone: --body-file is not pr-open's.
+  const bare = slipway(repo, ['forge', 'pr-open', '--title', 't', '--body-file', 'x.md'], { env });
+  assert.equal(bare.code, 2);
+  assert.match(bare.stderr, /pr-open needs --plan/);
+  assert.match(slipway(repo, ['forge', 'pr-open', '--plan', 'docs/plan/D9.md'], { env }).stderr, /--plan .*D9\.md: no such file/);
 });

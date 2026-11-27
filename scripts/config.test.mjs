@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ConfigError, loadConfig, normalize, laneFromBranch, laneBranch, laneWorktree } from './config.mjs';
+import { ConfigError, loadConfig, normalize, laneFromBranch, laneBranch, laneWorktree, releaseTitle } from './config.mjs';
 import { tempRepo } from './testing.mjs';
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/config/${name}.json`, import.meta.url), 'utf8'));
@@ -36,7 +36,7 @@ test("the §9 config (this repository's own) loads, with release in place of tag
   assert.equal(c.lane.setup, null);
   assert.deepEqual(c.lane.copy, []);
   assert.deepEqual(c.locks.tiers, []);
-  assert.deepEqual(c.release, { tag: 'v{version}', versionFile: '.claude-plugin/plugin.json', also: ['.claude-plugin/marketplace.json'] });
+  assert.deepEqual(c.release, { tag: 'v{version}', title: 'Slipway v{version}', versionFile: '.claude-plugin/plugin.json', also: ['.claude-plugin/marketplace.json'] });
   assert.deepEqual(c.areas.skills, { paths: ['skills/**'], skills: [] });
 });
 
@@ -104,6 +104,15 @@ test('a tag needs either tagPrefix or a release block', () => {
     'release.versionFile: required when release is set',
     'release.tag: must contain {version}',
   ]);
+});
+
+test('release.title defaults to the tag and fills {version} and {tag}', () => {
+  const release = (extra) => normalize({ ...minimal(), release: { versionFile: 'v.txt', ...extra } });
+  assert.equal(release({}).release.title, '{tag}');
+  assert.equal(releaseTitle(release({}), '1.2.0'), 'v1.2.0');
+  assert.equal(releaseTitle(release({ tag: 'rel-{version}', title: 'Shop {version} ({tag})' }), '1.2.0'), 'Shop 1.2.0 (rel-1.2.0)');
+  assert.equal(releaseTitle(normalize(fixture('slipway')), '0.3.0'), 'Slipway v0.3.0');
+  assert.deepEqual(problemsOf({ ...minimal(), release: { versionFile: 'v.txt', title: '' } }), ['release.title: must be a non-empty string']);
 });
 
 test('a missing file says to run init; broken JSON names the file', (t) => {

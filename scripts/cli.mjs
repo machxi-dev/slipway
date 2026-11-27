@@ -11,7 +11,7 @@ import { digest } from './digest.mjs';
 import { docsCheck } from './docs-check.mjs';
 import { makeWorktree, removeWorktree } from './worktree.mjs';
 import { forge } from './forge.mjs';
-import { bump, tag } from './release.mjs';
+import { CHANGELOG, bump, notes, tag } from './release.mjs';
 import { TARGET, fixedLoad, formatReport } from './report.mjs';
 
 const USAGE = `usage: slipway <verb> [args]
@@ -45,13 +45,17 @@ const USAGE = `usage: slipway <verb> [args]
   docs-check             the ledger, plans, decisions, records, digests, specs and byte budgets
   worktree [D<n>]        make the lane's worktree, copy lane.copy into it and run lane.setup
   worktree remove D<n>   remove a shipped lane's worktree and branch
-  forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | comments | ready | merge
+  forge pr-open --plan <plan> [--title <t>] | pr | comment --body-file <f> | comments | ready | merge
   forge run [--sha <sha>] [--wait] [--log]
                          the forge's pull request and CI run for this branch (github through gh; none locally);
+                         pr-open's body is the plan's goal, step titles and CI line, its title "D<n> — <title>";
                          comments prints the first line of each comment (under none, the ones recorded locally);
                          --branch <b> acts on another branch's, from a checkout where it is not checked out
-  release bump patch|minor|major
-                         bump the version in release.versionFile and release.also
+  release bump patch|minor|major [--date <YYYY-MM-DD>]
+                         bump the version in release.versionFile and release.also, and rename
+                         CHANGELOG.md's "## Unreleased" heading to the version and date
+  release notes [--out <file>]
+                         print the release title; write the version's CHANGELOG.md section to the file
   tag D<n> --head <sha> [--commit <sha>] [--pr <url>] [--title <t>]
                          tag the merge commit of a shipped lane; never moves a tag
   config                 check slipway.config.json and print it with its defaults filled in
@@ -258,19 +262,38 @@ const verbs = {
   async forge(args, { cwd, out }) {
     const { root, config } = setup(cwd);
     const [verb, ...more] = args;
-    const { opts } = options(more, { values: ['title', 'body-file', 'sha', 'branch'], flags: ['wait', 'log'] });
+    const { opts } = options(more, { values: ['plan', 'title', 'body-file', 'sha', 'branch'], flags: ['wait', 'log'] });
     const bodyFile = opts['body-file'] && path.resolve(cwd, opts['body-file']);
-    const r = await forge(root, config, verb, { title: opts.title, bodyFile, sha: opts.sha, wait: opts.wait, log: opts.log, branch: opts.branch });
+    const plan = opts.plan && path.resolve(cwd, opts.plan);
+    const r = await forge(root, config, verb, { plan, title: opts.title, bodyFile, sha: opts.sha, wait: opts.wait, log: opts.log, branch: opts.branch });
     for (const l of r.lines) out(l);
     return r.code;
   },
   async release(args, { cwd, out }) {
     const { root, config } = setup(cwd);
-    if (args[0] !== 'bump' || args.length !== 2) throw new UsageError('usage: slipway release bump patch|minor|major');
-    const r = bump(root, config, args[1]);
-    out(`${r.from} -> ${r.to}; tag ${r.tag}`);
-    for (const f of r.files) out(`updated ${f}`);
-    return 0;
+    const [sub, ...more] = args;
+    if (sub === 'bump') {
+      const { opts, rest } = options(more, { values: ['date'] });
+      if (rest.length === 1) {
+        const r = bump(root, config, rest[0], { date: opts.date });
+        out(`${r.from} -> ${r.to}; tag ${r.tag}`);
+        for (const f of r.files) out(`updated ${f}`);
+        return 0;
+      }
+    }
+    if (sub === 'notes') {
+      const { opts, rest } = options(more, { values: ['out'] });
+      if (!rest.length) {
+        const file = opts.out && path.resolve(cwd, opts.out);
+        const r = notes(root, config, { out: file });
+        out(r.title);
+        if (r.notes === null) out(`no ${CHANGELOG}: the release takes generated notes`);
+        else if (file) out(`wrote ${file}`);
+        else out(`\n${r.notes.trimEnd()}`);
+        return 0;
+      }
+    }
+    throw new UsageError('usage: slipway release bump patch|minor|major | slipway release notes [--out <file>]');
   },
   async tag(args, { cwd, out }) {
     const { root, config } = setup(cwd);

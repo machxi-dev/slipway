@@ -79,11 +79,12 @@ CI is a per-lane setting: each plan's header carries `- CI: on | at-ship | off`,
 
 ### `release`
 
-For a repository that is itself a published artefact. With `release` set, a ship bumps a semver version and tags it, instead of tagging `<tagPrefix>-D<n>`; under `forge: github` it also publishes a GitHub Release from the version's changelog section. `null` or absent turns it off.
+For a repository that is itself a published artefact. With `release` set, a ship bumps a semver version and tags it, instead of tagging `<tagPrefix>-D<n>`; the bump renames a root `CHANGELOG.md`'s `## Unreleased` heading to the version and date, and refuses a changelog without one. Under `forge: github` the ship also publishes a GitHub Release, its notes the version's changelog section, which `slipway release notes` writes. `null` or absent turns it off.
 
 | Key | Default | What it is |
 | --- | --- | --- |
 | `release.tag` | `v{version}` | The tag's name; must contain `{version}`. |
+| `release.title` | `{tag}` | The GitHub Release's title, with `{version}` and `{tag}` filled, such as `"Slipway v{version}"`. Needs Slipway 0.3.0 or later: an earlier one refuses the key. |
 | `release.versionFile` | required | The file whose version the ship bumps: a JSON `"version"` (`package.json`, `plugin.json`), a `version = "…"` line (`Cargo.toml`, `pyproject.toml`), or a file holding the version alone. |
 | `release.also` | `[]` | Other files that carry the same version, bumped with it. |
 
