@@ -37,12 +37,32 @@ test('a repository fresh from init passes', (t) => {
   assert.match(r.out, /^docs-check: ok \(\d+ files\)$/m);
 });
 
-test('an open lane in shape passes; its ledger row and plan must agree', (t) => {
+test('an open lane in shape passes; the table must be what the plans’ headers generate (§4.7)', (t) => {
   const repo = ready(t);
   lane(repo);
   assert.equal(check(repo).code, 0, check(repo).problems.join('\n'));
   write(repo, 'docs/plan/D4.md', PLAN.replace('- Status: in progress', '- Status: planned'));
-  assert.deepEqual(check(repo).problems, ['docs/plan/README.md:20: D4 is in progress, but its plan says planned']);
+  const stale = ["docs/plan/README.md: the table differs from the plans' headers and the roadmap; run slipway ledger generate"];
+  assert.deepEqual(check(repo).problems, stale);
+  assert.equal(slipway(repo, ['ledger', 'generate', '--check']).stdout, 'stale docs/plan/README.md\n');
+  assert.equal(slipway(repo, ['ledger', 'generate']).stdout, 'wrote docs/plan/README.md\n');
+  assert.match(read(repo, 'docs/plan/README.md'), /^\| \[D4\]\(D4\.md\) \| Refunds \| planned \|$/m);
+  assert.equal(check(repo).code, 0, check(repo).problems.join('\n'));
+  assert.equal(slipway(repo, ['ledger', 'generate']).stdout, '', 'nothing to write');
+});
+
+test('a row with no plan and no roadmap entry is refused, never dropped', (t) => {
+  const repo = ready(t);
+  const ledger = read(repo, 'docs/plan/README.md');
+  write(repo, 'docs/plan/README.md', `${ledger.trimEnd()}\n| D7 | By hand | planned |\n`);
+  const problem = 'docs/plan/README.md:20: D7 has no plan and no "### D7 — <title>" entry under "## Planned" in ROADMAP.md; add one, or remove the row';
+  assert.deepEqual(check(repo).problems, [problem]);
+  const r = slipway(repo, ['ledger', 'generate']);
+  assert.equal(r.code, 1);
+  assert.equal(r.stderr, `${problem}\n`);
+  assert.match(read(repo, 'docs/plan/README.md'), /\| D7 \| By hand \| planned \|/);
+  write(repo, 'docs/plan/ROADMAP.md', read(repo, 'docs/plan/ROADMAP.md').replace('## Candidates', '### D7 — By hand\n\n## Candidates'));
+  assert.equal(check(repo).code, 0, check(repo).problems.join('\n'));
 });
 
 test('plans out of shape are refused, naming file and line', (t) => {

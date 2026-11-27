@@ -298,6 +298,8 @@ test('--brownfield splits a ledger in another shape into the three files (§13.5
     '| [D2](0002-auth.md) | Auth | in progress | sign in |',
     '| D3 | Billing \\| invoices | planned (after D2 is done) | invoices |',
     '| D4 | Search | someday | maybe |',
+    '| D5 | Export | in progress | csv |',
+    '| D6 | Import | in progress | csv |',
     '',
     '## Build plan',
     '',
@@ -305,6 +307,8 @@ test('--brownfield splits a ledger in another shape into the three files (§13.5
     '',
   ].join('\n');
   writeFileSync(path.join(repo, 'docs/plan/README.md'), old);
+  writeFileSync(path.join(repo, 'docs/plan/D5.md'), '# D5. CSV export\n\n- Status: in progress\n');
+  writeFileSync(path.join(repo, 'docs/plan/D6.md'), '# D6. CSV import\n\n- Status: shipped 2026-11-02\n');
   const plain = quiet(repo, { check: 'x' });
   assert.match(plain.warnings.join('\n'), /ledger in another shape; run init --brownfield/);
   assert.equal(read(repo, 'docs/plan/README.md'), old, 'left alone without --brownfield');
@@ -314,9 +318,14 @@ test('--brownfield splits a ledger in another shape into the three files (§13.5
   assert.ok(brown.actions.some((a) => a.action === 'split' && a.path === 'docs/plan/README.md'), JSON.stringify(brown.actions));
   assert.match(brown.warnings.join('\n'), /kept as planned, status not read: D4: "someday"/);
   const ledger = read(repo, 'docs/plan/README.md');
-  assert.match(ledger, /\| D \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| \[D2\]\(0002-auth\.md\) \| Auth \| in progress \|\n\| D3 \| Billing \\\| invoices \| planned \|\n\| D4 \| Search \| planned \|\n$/);
-  assert.match(read(repo, 'docs/plan/SHIPPED.md'), /\| \[D1\]\(0001-skeleton\.md\) \| Walking skeleton \| 2026-10-01 \|  \|\n$/);
+  // The table is generated (§4.7): a row whose plan says it is open is the plan's; any other is a roadmap entry.
+  assert.match(ledger, /\| D \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| D2 \| Auth \| planned \|\n\| D3 \| Billing \\\| invoices \| planned \|\n\| D4 \| Search \| planned \|\n\| \[D5\]\(D5\.md\) \| CSV export \| in progress \|\n$/);
+  assert.match(brown.warnings.join('\n'), /D2 was in progress, but has no plan; it is planned until its plan says "- Status: in progress"/);
+  assert.match(read(repo, 'docs/plan/SHIPPED.md'), /\| \[D1\]\(0001-skeleton\.md\) \| Walking skeleton \| 2026-10-01 \|  \|\n\| \[D6\]\(D6\.md\) \| Import \| 2026-11-02 \|  \|\n$/);
+  assert.match(brown.warnings.join('\n'), /D6: the old ledger said in progress, but its plan says shipped; it goes to SHIPPED\.md/);
+  assert.ok(brown.actions.some((a) => a.note === '4 open rows kept, 2 to SHIPPED.md, the rest to ROADMAP.md'), JSON.stringify(brown.actions));
   const roadmap = read(repo, 'docs/plan/ROADMAP.md');
+  assert.match(roadmap, /## Planned\n\n<!--[^]*-->\n\n### D2 — Auth\n\nThe previous ledger linked it to \[0002-auth\.md\]\(0002-auth\.md\)\.\n\n### D3 — Billing \| invoices\n\n### D4 — Search\n\n## Candidates/);
   assert.match(roadmap, /## From the previous ledger\n\nTag prefix: `shop`\n\n## Build plan\n\nBilling waits for auth\.\n$/);
   assert.ok(quiet(repo, { brownfield: true }).actions.every((a) => a.action === 'kept'), 'a split ledger is Slipway’s');
 });

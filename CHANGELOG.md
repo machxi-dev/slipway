@@ -2,6 +2,12 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
+## Unreleased
+
+### Changed
+
+- The ledger's table is generated from the plans' headers and the roadmap's planned entries: `slipway ledger generate [--check]`; `docs-check` refuses it stale and refuses a row with no source rather than drop it; `ledger add`, `set` and `ship` regenerate it, and a merge conflict in it is resolved by regenerating (§4.7).
+
 ## 0.1.0 — 2026-11-27
 
 ### Added

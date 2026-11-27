@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { digest, parseRules, wordCount } from './digest.mjs';
 import { isGlob, matches } from './glob.mjs';
-import { LEDGER_HEADER, SHIPPED_HEADER, readRows } from './ledger.mjs';
+import { LEDGER_HEADER, SHIPPED_HEADER, hasTable, readRows } from './ledger.mjs';
+import { generatedLedger } from './lane.mjs';
 import { CI_VALUES, RELEASE_PARTS, listPlans, parseDecisions, statusWord } from './plan.mjs';
 import { BUDGET_FILE } from './init.mjs';
 import { listRecords } from './records.mjs';
@@ -50,7 +51,13 @@ export function docsCheck(root, config, pluginRoot) {
   else {
     const text = read(ledger);
     if (!/^Tags: /m.test(text)) bad(ledger, 0, 'needs its "Tags:" line');
-    if (!text.split(/\r?\n/).some((l) => l.trim() === LEDGER_HEADER)) bad(ledger, 0, `needs the "${LEDGER_HEADER}" table`);
+    if (!hasTable(text)) bad(ledger, 0, `needs the "${LEDGER_HEADER}" table`);
+    else {
+      // The table is generated from the plans' headers and the roadmap's planned entries (§4.7).
+      const gen = generatedLedger(root, config);
+      for (const p of gen.problems) problems.push(p);
+      if (!gen.problems.length && gen.text !== null) bad(ledger, 0, "the table differs from the plans' headers and the roadmap; run slipway ledger generate");
+    }
     for (const r of readRows(text)) {
       if (ledgerRows.has(r.n)) bad(ledger, r.line + 1, `D${r.n} has two rows`);
       ledgerRows.set(r.n, r);
@@ -61,7 +68,7 @@ export function docsCheck(root, config, pluginRoot) {
   const shippedFile = posix(path.join(plansDir, 'SHIPPED.md'));
   if (has(shippedFile)) {
     const text = read(shippedFile);
-    if (!text.split(/\r?\n/).some((l) => l.trim() === SHIPPED_HEADER)) bad(shippedFile, 0, `needs the "${SHIPPED_HEADER}" table`);
+    if (!hasTable(text, SHIPPED_HEADER)) bad(shippedFile, 0, `needs the "${SHIPPED_HEADER}" table`);
     for (const r of readRows(text, SHIPPED_HEADER)) {
       if (ledgerRows.has(r.n)) bad(shippedFile, r.line + 1, `D${r.n} is also open in the ledger`);
       if (r.link && !resolves(shippedFile, r.link)) bad(shippedFile, r.line + 1, `D${r.n}: link ${r.link} does not resolve`);
@@ -90,9 +97,6 @@ export function docsCheck(root, config, pluginRoot) {
     for (const rec of [...(plan.header.Records ?? '').matchAll(/\]\(([^)\s]+)\)/g)].map((m) => m[1])) {
       if (!resolves(f, rec)) bad(f, at('Records'), `record link ${rec} does not resolve`);
     }
-    const row = ledgerRows.get(n);
-    if (status === 'in progress' && row?.status !== 'in progress') bad(f, at('Status'), `in progress, but the ledger row says ${row ? row.status : 'nothing'}`);
-    if (row?.status === 'in progress' && status !== 'in progress') bad(ledger, row.line + 1, `D${n} is in progress, but its plan says ${status}`);
     if (status !== 'shipped') {
       // A brownfield corpus's shipped plans are history, read as they are (§14).
       if (!plan.steps.length && status === 'in progress') bad(f, 0, 'an in-progress plan needs at least one step under "## Steps"');

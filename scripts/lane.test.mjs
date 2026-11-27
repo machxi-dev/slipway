@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
-import { findLane, overlapWarnings, overlaps, skillsFor } from './lane.mjs';
+import { addEntry, findLane, overlapWarnings, overlaps, removeEntry, skillsFor } from './lane.mjs';
 import { git, slipway, tempRepo } from './testing.mjs';
 
 const PLAN = readFileSync(new URL('./fixtures/plan.md', import.meta.url), 'utf8');
@@ -94,4 +94,88 @@ test('a row is never lost when SHIPPED.md cannot take it', (t) => {
   const r = slipway(repo, ['ledger', 'ship', 'D1']);
   assert.equal(r.code, 1);
   assert.match(read(repo, 'docs/plan/README.md'), /\| D1 \| Refunds \| planned \|/);
+});
+
+test('the table follows the plans: scope links a row, a row with no plan cannot open (§4.7)', (t) => {
+  const repo = ready(t);
+  slipway(repo, ['ledger', 'add', 'Refunds']);
+  let r = slipway(repo, ['ledger', 'set', 'D1', 'in progress']);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /D1 has no plan yet; \/slipway:scope writes docs\/plan\/D1\.md first/);
+  assert.match(slipway(repo, ['ledger', 'set', 'D9', 'planned']).stderr, /no row D9: no open plan docs\/plan\/D9\.md and no "### D9 — <title>" entry/);
+  writeFileSync(path.join(repo, 'docs/plan/D1.md'), PLAN.replace('# D4. Refunds', '# D1. Partial refunds').replace('in progress', 'planned'));
+  assert.equal(slipway(repo, ['docs-check']).code, 1, 'a plan the table does not show yet is stale');
+  assert.equal(slipway(repo, ['ledger', 'set', 'D1', 'planned']).stdout, 'wrote docs/plan/README.md\n', 'the plan was already planned');
+  assert.match(read(repo, 'docs/plan/README.md'), /^\| \[D1\]\(D1\.md\) \| Partial refunds \| planned \|$/m, 'the plan’s title wins over the roadmap’s');
+});
+
+test('two lanes that open on their branches conflict only in the table, and regenerating resolves it (§4.5 step 2)', (t) => {
+  const repo = ready(t);
+  for (const title of ['One', 'Two', 'Three']) slipway(repo, ['ledger', 'add', title]);
+  for (const n of [1, 2]) writeFileSync(path.join(repo, `docs/plan/D${n}.md`), PLAN.replace('# D4. Refunds', `# D${n}. ${['One', 'Two'][n - 1]}`).replace('in progress', 'planned').replace('lane/D4', `lane/D${n}`));
+  for (const n of [1, 2]) slipway(repo, ['ledger', 'set', `D${n}`, 'planned']);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'scope D1 and D2');
+  for (const n of [1, 2]) {
+    git(repo, 'checkout', '-q', '-b', `lane/D${n}`, 'main');
+    assert.equal(slipway(repo, ['ledger', 'set', `D${n}`, 'in progress']).code, 0);
+    git(repo, 'commit', '-q', '-am', `open D${n}`);
+  }
+  git(repo, 'checkout', '-q', 'main');
+  git(repo, 'merge', '-q', '--no-ff', '-m', 'ship D1', 'lane/D1');
+  git(repo, 'checkout', '-q', 'lane/D2');
+  assert.throws(() => git(repo, 'merge', '-q', 'main'), 'adjacent rows conflict');
+  assert.deepEqual(git(repo, 'diff', '--name-only', '--diff-filter=U').split('\n'), ['docs/plan/README.md']);
+  assert.equal(slipway(repo, ['ledger', 'generate']).stdout, 'wrote docs/plan/README.md\n');
+  assert.match(read(repo, 'docs/plan/README.md'), /\| --- \| --- \| --- \|\n\| \[D1\]\(D1\.md\) \| One \| in progress \|\n\| \[D2\]\(D2\.md\) \| Two \| in progress \|\n\| D3 \| Three \| planned \|\n$/);
+  assert.equal(slipway(repo, ['ledger', 'generate', '--check']).code, 0);
+});
+
+test('with commands.format, the table is written through it and its padding is read back as the same rows', (t) => {
+  const repo = ready(t);
+  // A formatter that pads the table's cells, and pads them further each run, as no real one would.
+  writeFileSync(path.join(repo, 'pad.mjs'), "import { readFileSync, writeFileSync } from 'node:fs';\nfor (const f of process.argv.slice(2)) writeFileSync(f, readFileSync(f, 'utf8').replace(/^\\|.*$/gm, (l) => l.replaceAll(' | ', '  |  ')));\n");
+  const cfg = JSON.parse(read(repo, 'slipway.config.json'));
+  cfg.commands.format = 'node pad.mjs';
+  writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(cfg));
+  slipway(repo, ['ledger', 'add', 'Refunds']);
+  assert.match(read(repo, 'docs/plan/README.md'), /^\| D1  \|  Refunds  \|  planned \|$/m);
+  assert.equal(slipway(repo, ['ledger', 'generate', '--check']).code, 0);
+  slipway(repo, ['ledger', 'add', 'Returns']);
+  assert.equal(slipway(repo, ['ledger', 'generate', '--check']).code, 0);
+  assert.equal(slipway(repo, ['docs-check']).code, 0, slipway(repo, ['docs-check']).stderr);
+});
+
+test('roadmap entries go under "## Planned" exactly, in the file’s line ends, and leave from there at ship', () => {
+  const roadmap = '# Roadmap\n\n## Planned work\n\n### D1 — Track note\n\n## Planned\n\n### D1 — One\n\n## Candidates\n';
+  assert.equal(addEntry(roadmap, '### D2 — Two\n'), '# Roadmap\n\n## Planned work\n\n### D1 — Track note\n\n## Planned\n\n### D1 — One\n\n### D2 — Two\n\n## Candidates\n');
+  assert.equal(addEntry(roadmap.replace(/\n/g, '\r\n'), '### D2 — Two\n'), addEntry(roadmap, '### D2 — Two\n').replace(/\n/g, '\r\n'));
+  assert.equal(removeEntry(roadmap, 1), '# Roadmap\n\n## Planned work\n\n### D1 — Track note\n\n## Planned\n\n## Candidates\n');
+  assert.equal(removeEntry('# Roadmap\n\n## Tracks\n\n### D3 — X\n\n## Planned\n', 3), '# Roadmap\n\n## Tracks\n\n## Planned\n', 'else the first anywhere, as before');
+  assert.equal(removeEntry(roadmap, 9), null);
+});
+
+test('a failing formatter leaves every file as it was', (t) => {
+  const repo = ready(t);
+  slipway(repo, ['ledger', 'add', 'Refunds']);
+  const before = ['README.md', 'ROADMAP.md', 'SHIPPED.md'].map((f) => read(repo, `docs/plan/${f}`));
+  const cfg = JSON.parse(read(repo, 'slipway.config.json'));
+  cfg.commands.format = 'node -e "process.exit(3)"';
+  writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(cfg));
+  for (const args of [['ledger', 'add', 'Returns'], ['ledger', 'ship', 'D1']]) {
+    const r = slipway(repo, args);
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /commands\.format failed on docs\/plan\/README\.md/);
+    assert.deepEqual(['README.md', 'ROADMAP.md', 'SHIPPED.md'].map((f) => read(repo, `docs/plan/${f}`)), before);
+  }
+});
+
+test('a number in SHIPPED.md never comes back as a planned row', (t) => {
+  const repo = ready(t);
+  slipway(repo, ['ledger', 'add', 'Refunds']);
+  assert.equal(slipway(repo, ['ledger', 'ship', 'D1', '--date', '2026-11-27']).code, 0);
+  const roadmap = path.join(repo, 'docs/plan/ROADMAP.md');
+  writeFileSync(roadmap, read(repo, 'docs/plan/ROADMAP.md').replace('## Candidates', '### D1 — Refunds, again\n\n## Candidates'));
+  assert.equal(slipway(repo, ['ledger', 'generate', '--check']).code, 0);
+  assert.doesNotMatch(read(repo, 'docs/plan/README.md'), /Refunds/);
 });
