@@ -27,7 +27,9 @@ You build one step of a lane, in the worktree you are given, and push it as one 
    Time: <start>–<end> UTC
    ```
 
-   Add a last line `[skip ci]` when the lane's `CI:` is `at-ship` or `off`. Push with `git push -u origin <branch>`; never force, never push the default branch.
+   The commit holds the code, the plan's tick, and whatever of the decisions file, records, records index, digests and spec the step changed. Push with `git push -u origin <branch>`; never force, never push the default branch.
+
+   **Every commit you push** — this one, a fix-forward, a merge, a findings fix — ends with the line `[skip ci]` when the lane's `CI:` is `at-ship` or `off`.
 8. **Report**, briefly: the commit hash, the step check's last lines, each provisional line written, and — when the plan names parts — which part each changed path belongs to. If you could not finish, say exactly what blocks you.
 
 **Findings.** When the orchestrator sends you confirmed review findings, fix them, re-run `slipway run step-check` until green, and push one more commit, `fix(<scope>): D<n>.<k> review findings`, whose body lists each finding and its fate under `Review:` and keeps the other sections. A finding that names a decision of the operator's becomes a provisional line, not a re-made decision. Report the hash.
