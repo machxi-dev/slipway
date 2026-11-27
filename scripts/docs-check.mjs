@@ -109,7 +109,7 @@ export function docsCheck(root, config, pluginRoot) {
     if (has(dfile)) {
       for (const d of parseDecisions(read(dfile))) {
         if (d.malformed) bad(dfile, d.line, 'a line is "- Provisional (D<n>.<step>): …" or "- Owed (D<n>.<step>): …"');
-        else if (status === 'shipped' && d.open) bad(dfile, d.line, `D${n} shipped with this line open; mark it Ratified, Overturned or Paid`);
+        else if (status === 'shipped' && d.open) bad(dfile, d.line, `D${n} shipped with this line open; mark it Ratified, Overturned, Paid or Carried`);
       }
     }
   }

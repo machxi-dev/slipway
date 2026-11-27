@@ -52,12 +52,14 @@ test('decisions lines are read by shape; marks close them; anything else is malf
 - Provisional (D4.2): took cents; declined floats; overturning costs a migration.
 - Provisional (D4.2): took 404; declined 410; overturning costs a client change. Ratified 2026-11-27.
 - Owed (D4.1): a load test, before ship. Paid D5.1
+- Owed (D4.2): a soak test. Carried 2026-11-27 to D9
 - Overturned 2026-11-27, something.
 `);
   assert.deepEqual(d.map((x) => [x.line, x.kind ?? 'malformed', x.open ?? null]), [
     [6, 'Provisional', true],
     [7, 'Provisional', false],
     [8, 'Owed', false],
-    [9, 'malformed', null],
+    [9, 'Owed', false],
+    [10, 'malformed', null],
   ]);
 });

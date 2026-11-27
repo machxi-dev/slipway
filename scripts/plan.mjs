@@ -107,7 +107,7 @@ export function setHeader(text, key, value) {
 }
 
 const ITEM = /^- (Provisional|Owed) \(D(\d+)\.(\d+)\):\s*\S/;
-const CLOSED = /\b(Ratified \d{4}-\d{2}-\d{2}|Overturned \d{4}-\d{2}-\d{2},\s*\S|Paid D\d+\.\d+)/;
+const CLOSED = /\b(Ratified \d{4}-\d{2}-\d{2}|Overturned \d{4}-\d{2}-\d{2},\s*\S|Paid D\d+\.\d+|Carried \d{4}-\d{2}-\d{2} to D\d+)/;
 
 /**
  * The lines of a decisions file (§4.3): { line, kind, step, open } for each list item outside comments, and

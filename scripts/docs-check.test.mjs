@@ -73,7 +73,7 @@ test('a shipped plan with an open decisions line is refused; a line in no known 
   assert.deepEqual(check(repo).problems, ['docs/plan/D4.decisions.md:4: a line is "- Provisional (D<n>.<step>): …" or "- Owed (D<n>.<step>): …"']);
   assert.equal(slipway(repo, ['ledger', 'ship', 'D4']).code, 0);
   assert.deepEqual(check(repo).problems, [
-    'docs/plan/D4.decisions.md:3: D4 shipped with this line open; mark it Ratified, Overturned or Paid',
+    'docs/plan/D4.decisions.md:3: D4 shipped with this line open; mark it Ratified, Overturned, Paid or Carried',
     'docs/plan/D4.decisions.md:4: a line is "- Provisional (D<n>.<step>): …" or "- Owed (D<n>.<step>): …"',
   ]);
 });
