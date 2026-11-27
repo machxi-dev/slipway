@@ -15,12 +15,12 @@ const CEILINGS = {
   'skills/ship/SKILL.md': 6144,
   'skills/adr/SKILL.md': 4608,
   'skills/init/SKILL.md': 5120,
-  'agents/step-builder.md': 4608, // D2: one plain command per Bash call
+  'agents/step-builder.md': 4096,
   'agents/code-reviewer.md': 2560,
   'agents/adr-reviewer.md': 2560,
   'agents/security-reviewer.md': 2560,
   'agents/gate-runner.md': 2048,
-  'agents/adr-author.md': 2048, // D2: one plain command per Bash call
+  'agents/adr-author.md': 1536,
 };
 
 /** The frontmatter's top-level scalar keys; lists and nested values are kept as their raw text. */
@@ -176,8 +176,9 @@ test('each agent that runs commands says one plain command per Bash call, and wr
     const text = readFileSync(path.join(PLUGIN_ROOT, 'agents', f), 'utf8');
     const tools = (frontmatter(text)?.tools ?? '').split(/,\s*/);
     if (!tools.includes('Bash')) continue;
-    assert.match(text, /one plain command per Bash call/, `agents/${f} runs commands but does not say one plain command per Bash call`);
-    assert.match(text, /search with Grep/i, `agents/${f} does not say to search with Grep`);
+    assert.match(text, /one plain command per Bash call/i,`agents/${f} runs commands but does not say one plain command per Bash call`);
+    if (tools.includes('Grep')) assert.match(text, /search with Grep/i, `agents/${f} does not say to search with Grep`);
+    else assert.doesNotMatch(text, /with Grep/i, `agents/${f} has no Grep tool but is told to use it`);
     assert.match(text, /never sed -i/, `agents/${f} does not forbid sed -i`);
     if (tools.includes('Write')) assert.match(text, /Write files with Write, change them with Edit/, `agents/${f} does not say to write with Write and change with Edit`);
   }
