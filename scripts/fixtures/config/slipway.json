@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "defaultBranch": "main",
+  "forge": "github",
+  "docs": {
+    "records": "docs/adr",
+    "plans": "docs/plan",
+    "digests": "docs/rules",
+    "specs": null
+  },
+  "lane": { "branch": "lane/D{n}", "worktree": "../{repo}-D{n}" },
+  "commands": {
+    "check": "node --test",
+    "step-check": "node --test",
+    "gate": "node --test && claude plugin validate . --strict"
+  },
+  "ci": { "default": "on", "workflow": "test.yml", "main": "on" },
+  "merge": "merge-commit",
+  "release": {
+    "tag": "v{version}",
+    "versionFile": ".claude-plugin/plugin.json",
+    "also": [".claude-plugin/marketplace.json"]
+  },
+  "areas": {
+    "skills": { "paths": ["skills/**"] },
+    "agents": { "paths": ["agents/**"] },
+    "scripts": { "paths": ["scripts/**", "bin/**"] }
+  }
+}

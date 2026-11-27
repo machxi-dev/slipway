@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "defaultBranch": "main",
+  "forge": "github",
+  "tagPrefix": "app",
+  "docs": {
+    "records": "docs/adr",
+    "plans": "docs/plan",
+    "digests": "docs/rules",
+    "specs": "docs/specs"
+  },
+  "lane": {
+    "branch": "lane/D{n}",
+    "worktree": "../{repo}-D{n}",
+    "copy": [".env"],
+    "setup": "pnpm db:lane"
+  },
+  "commands": {
+    "check": "pnpm check",
+    "step-check": "pnpm step:check",
+    "gate": "pnpm lint && pnpm check-types && pnpm test && pnpm size && pnpm format:check",
+    "format": "pnpm exec prettier --write"
+  },
+  "locks": { "tiers": ["step-check", "gate"] },
+  "ci": { "default": "at-ship", "workflow": "gate.yml", "main": "on" },
+  "release": null,
+  "merge": "merge-commit",
+  "areas": {
+    "api-and-data": {
+      "paths": ["apps/api/**", "packages/db/**"],
+      "skills": ["api-conventions"]
+    },
+    "frontend": {
+      "paths": ["apps/web/**", "packages/ui/**"],
+      "skills": ["frontend-conventions"]
+    }
+  }
+}
