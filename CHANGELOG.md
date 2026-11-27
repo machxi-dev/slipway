@@ -16,3 +16,4 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 - `slipway digest`, `slipway docs-check`, `slipway lane`, `slipway ledger`, `slipway worktree`, `slipway forge` (github and none), `slipway release bump` and `slipway tag` (§3.2, §4.5, §14).
 - The `SessionStart` hook: the lane, its next step and the planned rows, in three lines.
 - The lock takes over a dead holder under a claim, and stays held while the command's shell runs (§14).
+- The skill `/slipway:scope`: the decisions asked in one batch, the plan and its decisions file, the overlap warning, and on the operator's yes the lane opened (§4.1, §4.2, §4.6).
