@@ -40,6 +40,9 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   writeFileSync(path.join(wt, 'a.txt'), 'a\n');
   git(wt, 'add', 'a.txt');
   git(wt, 'commit', '-q', '-m', 'feat: D1.1 a');
+  git(wt, 'push', '-q', '-u', 'origin', 'lane/D1');
+  // Another clone moved origin's main on: the merge brings the local main up to it first.
+  git(origin, 'commit', '-q', '--allow-empty', '-m', 'elsewhere');
   for (const verb of ['pr-open', 'pr', 'ready', 'run']) assert.equal(slipway(wt, ['forge', verb]).code, 0, verb);
   // Step comments are kept in the worktree's git dir, so a resumed build can see which steps were reviewed.
   assert.equal(slipway(wt, ['forge', 'comments']).stdout, '');
@@ -61,6 +64,10 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   assert.equal(parents.length, 3, 'a merge commit');
   assert.equal(parents[2], git(wt, 'rev-parse', 'HEAD'));
   assert.equal(git(origin, 'rev-parse', 'main'), parents[0], 'pushed');
+  assert.equal(git(repo, 'log', '-1', '--format=%s', `${parents[0]}^1`), 'elsewhere');
+  // Removed from inside the worktree, the lane's branch goes from origin too, forge or none.
+  assert.equal(slipway(wt, ['worktree', 'remove', 'D1']).code, 0);
+  assert.equal(git(origin, 'branch', '--list', 'lane/D1'), '');
 });
 
 test('forge github goes through gh: an open pull request is reused, and a run is read on the pushed head', (t) => {

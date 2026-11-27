@@ -216,6 +216,16 @@ test('adopted records are listed in the records index', (t) => {
   );
 });
 
+test('a repository that is itself a plugin gets .claude/CLAUDE.md, which strict validation does not warn of', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, '.claude-plugin'), { recursive: true });
+  writeFileSync(path.join(repo, '.claude-plugin/plugin.json'), '{ "name": "p", "version": "0.1.0" }\n');
+  assert.equal(slipway(repo, ['init', '--check', 'node --test']).code, 0);
+  assert.equal(existsSync(path.join(repo, 'CLAUDE.md')), false);
+  assert.match(read(repo, '.claude/CLAUDE.md'), /^<!-- slipway -->/);
+  assert.ok(Object.hasOwn(JSON.parse(read(repo, 'slipway.budget.json')), '.claude/CLAUDE.md'));
+});
+
 test('an existing .claude/CLAUDE.md or lower-case readme gains the lines instead of a second file', (t) => {
   const repo = tempRepo(t);
   mkdirSync(path.join(repo, '.claude'));

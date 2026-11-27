@@ -217,7 +217,12 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   } else actions.push({ action: 'kept', path: rel(settingsFile) });
 
   // The one always-on sentence lives in the repository's CLAUDE.md; the plugin's own is never loaded (§13.1).
-  const claudeMd = [path.join(root, 'CLAUDE.md'), path.join(root, '.claude', 'CLAUDE.md')].find(existsSync) ?? path.join(root, 'CLAUDE.md');
+  // A repository that is itself a plugin takes .claude/CLAUDE.md: `claude plugin validate --strict` warns of a
+  // CLAUDE.md at a plugin's root.
+  const isPlugin = existsSync(path.join(root, '.claude-plugin', 'plugin.json'));
+  const claudeMd =
+    [path.join(root, 'CLAUDE.md'), path.join(root, '.claude', 'CLAUDE.md')].find(existsSync) ??
+    path.join(root, ...(isPlugin ? ['.claude', 'CLAUDE.md'] : ['CLAUDE.md']));
   appendOnce(claudeMd, '<!-- slipway -->', template('claude-md.md'), actions, rel);
   // Each clone installs the plugin once; the README says how (§10, §13.4).
   const readme = readdirSync(root).find((f) => /^readme\.(md|markdown)$/i.test(f)) ?? 'README.md';

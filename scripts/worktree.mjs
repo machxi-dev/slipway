@@ -68,10 +68,12 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
   const lane = findLane(root, config, arg);
   const main = mainRoot(root);
   const dir = laneWorktree(config, main, lane.n);
-  if (path.resolve(root) === path.resolve(dir)) throw usage('run this from the main checkout, not from the lane worktree it removes');
+  // A session that shipped from the lane's worktree removes it from there: git works from the main checkout,
+  // and this process leaves the directory first. A shell still inside it (on Windows) can hold it open.
+  if (path.resolve(root) === path.resolve(dir)) process.chdir(main);
   if (existsSync(dir)) {
     const r = git(main, ['worktree', 'remove', dir]);
-    if (r.status !== 0) throw new Error(`git worktree remove: ${r.stderr.trim()}`);
+    if (r.status !== 0) throw new Error(`git worktree remove: ${r.stderr.trim()}; close any shell inside ${dir}, then run \`slipway worktree remove D${lane.n}\` from ${main}`);
     log(`removed ${dir}`);
   }
   if (ok(main, ['show-ref', '--verify', '-q', `refs/heads/${lane.branch}`])) {
@@ -79,7 +81,7 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
     if (r.status !== 0) throw new Error(`git branch -d ${lane.branch}: ${r.stderr.trim()}`);
     log(`deleted branch ${lane.branch}`);
   }
-  if (config.forge !== 'none' && ok(main, ['ls-remote', '--exit-code', '--heads', 'origin', lane.branch])) {
+  if (ok(main, ['remote', 'get-url', 'origin']) && ok(main, ['ls-remote', '--exit-code', '--heads', 'origin', lane.branch])) {
     const r = git(main, ['push', 'origin', '--delete', lane.branch]);
     if (r.status !== 0) throw new Error(`git push origin --delete ${lane.branch}: ${r.stderr.trim()}`);
     log(`deleted origin/${lane.branch}`);
