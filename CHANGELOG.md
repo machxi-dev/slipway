@@ -12,3 +12,7 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 - `slipway init` also writes the process record (§5.1) and `slipway.budget.json` (§7), and with `--brownfield` splits a ledger in another shape into the three files (§13.5).
 - `slipway adr new` and `slipway adr accept`: record numbering, the status line, supersession and the index (§2, §5).
 - The skills `/slipway:init` and `/slipway:adr` (§4.1).
+- The step check's plugin half: `slipway run step-check` hands the repository's command the paths changed since the tree last proved green in that worktree (§3.3).
+- `slipway digest`, `slipway docs-check`, `slipway lane`, `slipway ledger`, `slipway worktree`, `slipway forge` (github and none), `slipway release bump` and `slipway tag` (§3.2, §4.5, §14).
+- The `SessionStart` hook: the lane, its next step and the planned rows, in three lines.
+- The lock takes over a dead holder under a claim, and stays held while the command's shell runs (§14).
