@@ -150,6 +150,52 @@ test('specs need scenarios with WHEN and THEN, and a Proved by: that exists', (t
   ]);
 });
 
+test('a requirement inside a fenced block is an example, not a requirement (§14)', (t) => {
+  const repo = ready(t);
+  write(repo, 'test/refund.test.js', '');
+  write(
+    repo,
+    'docs/specs/README.md',
+    [
+      '# Specs',
+      '',
+      'A spec reads:',
+      '',
+      '```markdown',
+      '## Requirement: <what holds>',
+      '',
+      'Proved by: `test/<file>`',
+      '````',
+      '',
+      '~~~',
+      '## Requirement: inside a tilde fence, with no scenario',
+      '```',
+      '~~~',
+      '',
+      '## Requirement: a refund rounds down',
+      '',
+      'Proved by: `test/refund.test.js`',
+      '',
+      '### Scenario: a third of a cent',
+      '',
+      '- WHEN 1 cent is split three ways',
+      '- THEN each part is 0 cents',
+      '',
+      '~~~text',
+      '## Requirement: an example after a real one',
+      '~~~',
+      '',
+      '## Requirement: outside any fence',
+      '',
+    ].join('\n'),
+  );
+  // A longer run of the same mark closes a fence; the other mark does not.
+  assert.deepEqual(check(repo).problems, [
+    'docs/specs/README.md:29: a requirement needs at least one "### Scenario:"',
+    'docs/specs/README.md:29: a requirement needs a "Proved by:" line',
+  ]);
+});
+
 test('budgets: a path beats a glob, the lower of two globs holds, a path naming no file is refused (§14)', (t) => {
   const repo = ready(t);
   write(repo, 'notes/a.md', 'x'.repeat(50));

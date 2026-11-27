@@ -290,6 +290,30 @@ test('the budget file sets the default ceilings, never below a file’s size tod
   assert.ok(Object.hasOwn(JSON.parse(read(nested, 'slipway.budget.json')), '.claude/CLAUDE.md'));
 });
 
+test('a file a glob reaches that is over the glob’s ceiling today gets its own entry at its size (§12, §14)', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, 'docs/plan'), { recursive: true });
+  const plan = `# D3. Old\n\n- Status: shipped\n- Records: none\n- CI: off\n\n${'history '.repeat(2500)}\n`;
+  writeFileSync(path.join(repo, 'docs/plan/D3.md'), plan);
+  writeFileSync(path.join(repo, 'docs/plan/D3.decisions.md'), `${'- Ratified 2026-01-01: x\n'.repeat(200)}`);
+  writeFileSync(path.join(repo, 'docs/plan/D4.md'), '# D4. Small\n');
+  // An ignored file is not one docs-check sees, so it gets no entry.
+  writeFileSync(path.join(repo, '.gitignore'), 'docs/plan/D9.md\n');
+  writeFileSync(path.join(repo, 'docs/plan/D9.md'), 'x'.repeat(20000));
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'history');
+  quiet(repo, { check: 'x', brownfield: true });
+  const budget = JSON.parse(read(repo, 'slipway.budget.json'));
+  assert.equal(budget['docs/plan/D3.md'], Buffer.byteLength(plan));
+  assert.equal(budget['docs/plan/D3.decisions.md'], 25 * 200);
+  assert.equal(budget['docs/plan/D*.md'], 16384, 'the glob keeps its default');
+  assert.equal(budget['docs/plan/D*.decisions.md'], 4096);
+  assert.ok(!Object.hasOwn(budget, 'docs/plan/D4.md'), 'a file under the ceiling stays with its glob');
+  assert.ok(!Object.hasOwn(budget, 'docs/plan/D9.md'), 'an ignored file gets no entry');
+  const r = slipway(repo, ['docs-check']);
+  assert.doesNotMatch(r.stderr + r.stdout, /ceiling|names no file/);
+});
+
 test('--brownfield splits a ledger in another shape into the three files (§13.5 step 5)', (t) => {
   const repo = tempRepo(t);
   mkdirSync(path.join(repo, 'docs/plan'), { recursive: true });

@@ -97,6 +97,13 @@ export function supersededFiles(text) {
   return [...line.matchAll(/\]\(([^)\s]+\.md)\)/g)].map((m) => path.basename(m[1]));
 }
 
+/** The records a `superseded by` Status line links, as file names: the record's successors. */
+export function supersedingFiles(text) {
+  const line = STATUS_LINE.exec(text)?.[1]?.trim() ?? '';
+  if (!/^superseded\b/i.test(line)) return [];
+  return [...line.matchAll(/\]\(([^)\s]+\.md)\)/g)].map((m) => path.basename(m[1]));
+}
+
 /**
  * Write a new record from the template: the next number, `proposed` unless told otherwise, the parents it
  * supersedes linked. Returns the record. `template` is the record template's text.

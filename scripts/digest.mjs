@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { quoteArg } from './run.mjs';
-import { findRecord, listRecords } from './records.mjs';
+import { findRecord, listRecords, supersededFiles, supersedingFiles } from './records.mjs';
 
 const posix = (p) => p.split(path.sep).join('/');
 
@@ -51,6 +51,23 @@ export function renderDigests(root, config, template) {
   const areas = Object.keys(config.areas);
   const lines = { general: [] };
   for (const a of areas) lines[a] = [];
+  // Supersession, read from both ends: a successor's `- Supersedes:` line and a parent's `superseded by` status.
+  const files = new Set(records.map((x) => x.file));
+  const parentsOf = new Map(records.map((x) => [x.file, new Set(supersededFiles(x.text).filter((f) => files.has(f)))]));
+  for (const x of records) for (const f of supersedingFiles(x.text)) parentsOf.get(f)?.add(x.file);
+  /** The records r supersedes, directly or down the chain. */
+  const ancestors = (r) => {
+    const seen = new Set();
+    const walk = (file) => {
+      for (const p of parentsOf.get(file) ?? []) {
+        if (seen.has(p)) continue;
+        seen.add(p);
+        walk(p);
+      }
+    };
+    walk(r.file);
+    return seen;
+  };
   // A digest's links are relative to the folder it is written in: the digests' folder, or .claude/rules for a loader.
   const link = (r, from) => `[${r.number ?? r.file}](${posix(path.relative(path.join(root, from), path.join(recordsDir, r.file)))})`;
   for (const r of records.filter((x) => x.status === 'accepted')) {
@@ -64,8 +81,11 @@ export function renderDigests(root, config, template) {
       for (const id of rule.with) {
         try {
           const other = findRecord(records, id);
-          if (other.status !== 'accepted') problems.push(`${where}:${rule.line}: (with: ${id}) cites ${other.file}, which is ${other.status}`);
-          else cited.push(other);
+          // A successor carries the lines a delta supersession left standing, citing the parent (§14): a
+          // superseded record may be cited by a record that supersedes it, directly or down its chain.
+          if (other.status === 'accepted' || (other.status === 'superseded' && ancestors(r).has(other.file))) cited.push(other);
+          else if (other.status === 'superseded') problems.push(`${where}:${rule.line}: (with: ${id}) cites ${other.file}, which is superseded, and not by ${r.file}`);
+          else problems.push(`${where}:${rule.line}: (with: ${id}) cites ${other.file}, which is ${other.status}`);
         } catch (err) {
           problems.push(`${where}:${rule.line}: (with: ${id}): ${err.message}`);
         }
