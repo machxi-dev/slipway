@@ -31,12 +31,14 @@ test('init on a new repository writes the config, the ledger, the records index,
     '.claude/settings.json',
     'CLAUDE.md',
     'README.md',
+    'docs/adr/0001-the-process.md',
     'docs/adr/README.md',
     'docs/plan/README.md',
     'docs/plan/ROADMAP.md',
     'docs/plan/SHIPPED.md',
     'docs/rules/general.md',
     'docs/specs/.gitkeep',
+    'slipway.budget.json',
     'slipway.config.json',
   ]);
   const c = loadConfig(repo);
@@ -206,7 +208,12 @@ test('adopted records are listed in the records index', (t) => {
   writeFileSync(path.join(repo, 'docs/adr/0001-db.md'), 'No heading here.\n');
   quiet(repo, { check: 'x', brownfield: true });
   const index = read(repo, 'docs/adr/README.md');
-  assert.ok(index.endsWith('| [0001-db](0001-db.md) | 0001-db.md | unknown |\n| [0002-queue](0002-queue.md) | 2. Use a queue | accepted |\n'), index);
+  assert.ok(
+    index.endsWith(
+      '| [0001](0001-db.md) | 0001-db.md | unknown |\n| [0002](0002-queue.md) | Use a queue | accepted |\n| [0003](0003-the-process.md) | The process | proposed |\n',
+    ),
+    index,
+  );
 });
 
 test('an existing .claude/CLAUDE.md or lower-case readme gains the lines instead of a second file', (t) => {
@@ -219,4 +226,97 @@ test('an existing .claude/CLAUDE.md or lower-case readme gains the lines instead
   assert.match(read(repo, '.claude/CLAUDE.md'), /^# Rules\n\n<!-- slipway -->/);
   assert.deepEqual(readdirSync(repo).filter((f) => /^readme/i.test(f)), ['readme.md']);
   assert.ok(read(repo, 'readme.md').startsWith('## Setup\n'), 'an empty file is treated as new');
+});
+
+test('a new corpus starts with the process record, accepted; an adopted one gains it proposed (§5.1, §13.5)', (t) => {
+  const fresh = tempRepo(t, 'fresh');
+  quiet(fresh, { check: 'x', date: '2026-11-27' });
+  const rec = read(fresh, 'docs/adr/0001-the-process.md');
+  assert.match(rec, /^# 0001\. The process\n\n- Status: accepted\n- Date: 2026-11-27\n- Supersedes: none\n/);
+  assert.match(rec, /in `docs\/plan\/D<n>\.decisions\.md`/, 'the docs paths are filled in');
+  assert.ok(!rec.includes('{{'), 'no placeholder is left');
+  assert.match(read(fresh, 'docs/adr/README.md'), /^\| \[0001\]\(0001-the-process\.md\) \| The process \| accepted \|$/m);
+
+  const old = tempRepo(t, 'old');
+  mkdirSync(path.join(old, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(old, 'docs/adr/0041-process.md'), '# ADR-0041: Process\n\n- Status: accepted\n');
+  writeFileSync(path.join(old, 'docs/adr/README.md'), '# ADRs\n\n| ADR | Title |\n| --- | --- |\n| [0041](0041-process.md) | Process |\n');
+  quiet(old, { check: 'x', brownfield: true });
+  assert.match(read(old, 'docs/adr/0042-the-process.md'), /^- Status: proposed$/m);
+  const index = read(old, 'docs/adr/README.md');
+  assert.ok(index.startsWith('# ADRs\n\n| ADR | Title |\n| --- | --- |\n| [0041](0041-process.md) | Process |\n\n'), 'the repository’s own index stays');
+  assert.match(index, /\| Record \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| \[0041\]\(0041-process\.md\) \| ADR-0041: Process \| accepted \|\n\| \[0042\]\(0042-the-process\.md\) \| The process \| proposed \|\n$/);
+  const again = quiet(old, { brownfield: true });
+  assert.ok(again.actions.every((a) => a.action === 'kept'), JSON.stringify(again.actions));
+});
+
+test('without --brownfield, a corpus of the repository’s own is left untouched', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(repo, 'docs/adr/0001-x.md'), '# X\n');
+  quiet(repo, { check: 'x' });
+  assert.deepEqual(readdirSync(path.join(repo, 'docs/adr')), ['0001-x.md']);
+});
+
+test('the budget file sets the default ceilings, never below a file’s size today (§7, §12)', (t) => {
+  const repo = tempRepo(t);
+  writeFileSync(path.join(repo, 'CLAUDE.md'), `# Big\n\n${'x'.repeat(6000)}\n`);
+  quiet(repo, { check: 'x' });
+  const budget = JSON.parse(read(repo, 'slipway.budget.json'));
+  assert.equal(budget['CLAUDE.md'], readFileSync(path.join(repo, 'CLAUDE.md')).length);
+  assert.equal(budget['docs/plan/README.md'], 8192);
+  assert.equal(budget['docs/rules/general.md'], 12288);
+  assert.equal(budget['docs/plan/D*.decisions.md'], 4096);
+  const nested = tempRepo(t, 'nested');
+  mkdirSync(path.join(nested, '.claude'));
+  writeFileSync(path.join(nested, '.claude/CLAUDE.md'), '# Rules\n');
+  quiet(nested, { check: 'x' });
+  assert.ok(Object.hasOwn(JSON.parse(read(nested, 'slipway.budget.json')), '.claude/CLAUDE.md'));
+});
+
+test('--brownfield splits a ledger in another shape into the three files (§13.5 step 5)', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, 'docs/plan'), { recursive: true });
+  const old = [
+    '# Delivery plan',
+    '',
+    'Tag prefix: `shop`',
+    '',
+    '| # | Deliverable | Status | Scope |',
+    '| --- | --- | --- | --- |',
+    '| [D1](0001-skeleton.md) | Walking skeleton | shipped 2026-10-01 | the app boots |',
+    '| [D2](0002-auth.md) | Auth | in progress | sign in |',
+    '| D3 | Billing \\| invoices | planned (after D2 is done) | invoices |',
+    '| D4 | Search | someday | maybe |',
+    '',
+    '## Build plan',
+    '',
+    'Billing waits for auth.',
+    '',
+  ].join('\n');
+  writeFileSync(path.join(repo, 'docs/plan/README.md'), old);
+  const plain = quiet(repo, { check: 'x' });
+  assert.match(plain.warnings.join('\n'), /ledger in another shape; run init --brownfield/);
+  assert.equal(read(repo, 'docs/plan/README.md'), old, 'left alone without --brownfield');
+  assert.equal(existsSync(path.join(repo, 'docs/plan/ROADMAP.md')), false, 'nothing is written beside it, so the split can follow');
+
+  const brown = quiet(repo, { brownfield: true });
+  assert.ok(brown.actions.some((a) => a.action === 'split' && a.path === 'docs/plan/README.md'), JSON.stringify(brown.actions));
+  assert.match(brown.warnings.join('\n'), /kept as planned, status not read: D4: "someday"/);
+  const ledger = read(repo, 'docs/plan/README.md');
+  assert.match(ledger, /\| D \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| \[D2\]\(0002-auth\.md\) \| Auth \| in progress \|\n\| D3 \| Billing \\\| invoices \| planned \|\n\| D4 \| Search \| planned \|\n$/);
+  assert.match(read(repo, 'docs/plan/SHIPPED.md'), /\| \[D1\]\(0001-skeleton\.md\) \| Walking skeleton \| 2026-10-01 \|  \|\n$/);
+  const roadmap = read(repo, 'docs/plan/ROADMAP.md');
+  assert.match(roadmap, /## From the previous ledger\n\nTag prefix: `shop`\n\n## Build plan\n\nBilling waits for auth\.\n$/);
+  assert.ok(quiet(repo, { brownfield: true }).actions.every((a) => a.action === 'kept'), 'a split ledger is Slipway’s');
+});
+
+test('an index of the repository’s own, with no records yet, is kept without --brownfield', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(repo, 'docs/adr/README.md'), '# Our decisions\n');
+  const { warnings } = quiet(repo, { check: 'x' });
+  assert.equal(read(repo, 'docs/adr/README.md'), '# Our decisions\n');
+  assert.deepEqual(readdirSync(path.join(repo, 'docs/adr')), ['README.md']);
+  assert.match(warnings.join('\n'), /index of the repository's own; run init --brownfield/);
 });

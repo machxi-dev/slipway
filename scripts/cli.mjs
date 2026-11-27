@@ -5,6 +5,7 @@ import { ConfigError, loadConfig } from './config.mjs';
 import { repoRoot } from './git.mjs';
 import { runCommand } from './run.mjs';
 import { init, parseInitArgs } from './init.mjs';
+import { acceptRecord, newRecord } from './records.mjs';
 
 const USAGE = `usage: slipway <verb> [args]
 
@@ -16,7 +17,10 @@ const USAGE = `usage: slipway <verb> [args]
       --step-check <cmd>, --gate <cmd>   default to --check
       --tag-prefix <p>, --forge github|none, --records|--plans|--digests <dir>, --specs <dir>|none
       --default-branch <b>   default: the remote's HEAD, or the only local branch
-      --brownfield       adopt an existing records folder into the records index (§12)
+      --brownfield       adopt an existing records folder, and split a ledger in another shape (§12, §13.5)
+  adr new <title> [--supersedes <n>[,<n>...]]
+                         write the next record from the template, proposed, and add it to the index
+  adr accept <n>         mark a proposed record accepted and the records it supersedes superseded by it
   config                 check slipway.config.json and print it with its defaults filled in
   version                print the plugin's version
 
@@ -56,6 +60,33 @@ const verbs = {
     for (const a of actions) out(`${a.action.padEnd(7)} ${a.path}${a.note ? ` (${a.note})` : ''}`);
     for (const w of warnings) err(`slipway init: warning: ${w}`);
     return 0;
+  },
+  async adr(args, { cwd, pluginRoot, out }) {
+    const root = needRepo(cwd);
+    const dir = path.join(root, loadConfig(root).docs.records);
+    const [sub, ...rest] = args;
+    const rel = (f) => path.posix.join(loadConfig(root).docs.records, f);
+    if (sub === 'new') {
+      const supersedes = [];
+      const words = [];
+      for (let i = 0; i < rest.length; i++) {
+        if (rest[i] === '--supersedes') {
+          if (i + 1 >= rest.length) throw new UsageError('--supersedes needs record numbers');
+          supersedes.push(...rest[++i].split(',').filter(Boolean));
+        } else if (rest[i].startsWith('--supersedes=')) supersedes.push(...rest[i].slice(13).split(',').filter(Boolean));
+        else if (rest[i].startsWith('--')) throw new UsageError(`unknown option ${rest[i]}`);
+        else words.push(rest[i]);
+      }
+      const template = readFileSync(path.join(pluginRoot, 'templates', 'record.md'), 'utf8');
+      const r = newRecord(dir, template, { title: words.join(' '), supersedes });
+      out(rel(r.file));
+      return 0;
+    }
+    if (sub === 'accept' && rest.length === 1) {
+      for (const f of acceptRecord(dir, rest[0])) out(rel(f));
+      return 0;
+    }
+    throw new UsageError('usage: slipway adr new <title> [--supersedes <n>,...] | slipway adr accept <n>');
   },
   async config(args, { cwd, out }) {
     out(JSON.stringify(loadConfig(needRepo(cwd)), null, 2));
