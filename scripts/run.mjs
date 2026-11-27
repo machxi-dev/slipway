@@ -5,6 +5,7 @@ import { constants } from 'node:os';
 import { laneFromBranch } from './config.mjs';
 import { currentBranch } from './git.mjs';
 import { HELD, acquire } from './lock.mjs';
+import { recordGreen, stepBase, writeChanged } from './proved.mjs';
 
 const SAFE_POSIX = /^[\w@%+=:,./-]+$/;
 const SAFE_WIN32 = /^[\w@+=:,./\\-]+$/;
@@ -61,18 +62,34 @@ export async function runCommand({ root, config, name, args = [], pluginRoot, lo
     e.code = 'EUSAGE';
     throw e;
   }
-  const command = [config.commands[name], ...args.map((a) => quoteArg(a))].join(' ');
+  // The step check is sized by the plugin: the paths changed since the last tree proved green here (§3.3).
+  let proved = null;
   const env = slipwayEnv({ root, config, name, pluginRoot });
+  if (name === 'step-check') {
+    let base;
+    const i = args.indexOf('--base');
+    if (i >= 0) {
+      if (i + 1 >= args.length) throw Object.assign(new Error('--base needs a ref'), { code: 'EUSAGE' });
+      base = args[i + 1];
+      args = [...args.slice(0, i), ...args.slice(i + 2)];
+    }
+    proved = stepBase(root, config, { base });
+    env.SLIPWAY_CHANGED_PATHS = writeChanged(root, proved.changed);
+    env.SLIPWAY_BASE = proved.base;
+    log(`slipway: step-check against ${proved.why}; ${proved.changed.length} changed path${proved.changed.length === 1 ? '' : 's'}`);
+  }
+  const command = [config.commands[name], ...args.map((a) => quoteArg(a))].join(' ');
   let release = () => {};
   if (config.locks.tiers.includes(name)) {
     release = await acquire(root, name, { timeoutMs: lockTimeoutMs, onWait: (m) => log(`slipway: ${m}`) });
     env[HELD] = release.token;
   }
   try {
-    return await new Promise((resolve, reject) => {
+    const code = await new Promise((resolve, reject) => {
       // On POSIX the command leads its own process group, so a signal reaches every process it started
       // and the lock is not released while any of them still runs.
       const child = spawn(command, { cwd: root, shell: true, stdio: 'inherit', env, detached: process.platform !== 'win32' });
+      if (child.pid) release.setChild?.(child.pid);
       const signals = process.platform === 'win32' ? ['SIGINT', 'SIGBREAK'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
       const forward = (sig) => signalTree(child, sig);
       for (const s of signals) process.on(s, forward);
@@ -86,6 +103,9 @@ export async function runCommand({ root, config, name, args = [], pluginRoot, lo
         resolve(code ?? 128 + (constants.signals[signal] ?? 0));
       });
     });
+    // Only a green run moves the record, and it records the tree as it stood before the run (§14).
+    if (proved && code === 0) recordGreen(root, proved.current);
+    return code;
   } finally {
     release();
   }
