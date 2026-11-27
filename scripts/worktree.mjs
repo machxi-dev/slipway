@@ -78,7 +78,32 @@ export function makeWorktree(root, config, arg, { pluginRoot, log = () => {} } =
   return out;
 }
 
-/** Remove a shipped lane's worktree and branch (§4.5 step 9). Refuses a worktree with changes. */
+/** The worktree that has `branch` checked out, or null. */
+function worktreeOn(main, branch) {
+  const out = git(main, ['worktree', 'list', '--porcelain']).stdout ?? '';
+  let dir = null;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) dir = line.slice(9);
+    else if (line === `branch refs/heads/${branch}`) return dir;
+  }
+  return null;
+}
+
+/**
+ * Bring the local default branch up to origin's (§4.5 step 9, §14): a fast-forward pull where a checkout has it,
+ * a fetch into the branch where none does. Throws, before anything is removed, when it cannot.
+ */
+function updateDefault(main, config, log) {
+  if (!ok(main, ['remote', 'get-url', 'origin'])) return;
+  const target = config.defaultBranch;
+  const at = worktreeOn(main, target);
+  const args = at ? ['pull', '--ff-only', '-q', 'origin', target] : ['fetch', '-q', 'origin', `${target}:${target}`];
+  const r = git(at ?? main, args);
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${(r.stderr || r.stdout).trim()}; nothing was removed`);
+  log(at ? `pulled ${target} in ${at}` : `updated ${target} from origin`);
+}
+
+/** Bring the default branch up to date, then remove a shipped lane's worktree and branch (§4.5 step 9). Refuses a worktree with changes. */
 export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
   const lane = findLane(root, config, arg);
   const main = mainRoot(root);
@@ -86,6 +111,7 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
   // A session that shipped from the lane's worktree removes it from there: git works from the main checkout,
   // and this process leaves the directory first. A shell still inside it (on Windows) can hold it open.
   if (path.resolve(root) === path.resolve(dir)) process.chdir(main);
+  updateDefault(main, config, log);
   if (existsSync(dir)) {
     if (registered(main, dir)) {
       const r = git(main, ['worktree', 'remove', dir]);

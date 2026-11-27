@@ -140,7 +140,7 @@ test('shellProblems names what makes a command more than one plain command (D2)'
   for (const [code, want] of cases) assert.deepEqual(shellProblems(code), want, code);
   for (const code of [
     'slipway lane --step <k>',
-    'git -C <main checkout> pull --ff-only',
+    'git -C <main checkout> worktree list',
     'slipway init --forge <github|none> --check "<a && b>"',
     'slipway forge pr-open --title "D<n> — <title>" --body-file <a file naming the plan\'s path and its CI: value>',
     'node -p "process.platform+\' \'+process.arch"',

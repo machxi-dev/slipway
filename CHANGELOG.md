@@ -17,6 +17,7 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 
 - `slipway ledger next` and `slipway lane --overlap` read the lane branches on the remote, after a fetch, as well as the checked-out tree, so a row planned or a lane opened on its branch is counted before it reaches the default branch; and `slipway lane --step` prints the plan's `## Constraints` before the step's section, so the step builder reads them (§4.2, §4.4).
 - `slipway release bump` renames a root `CHANGELOG.md`'s `## Unreleased` heading to `## <version> — <date>`, or Keep a Changelog's `## [Unreleased]` to `## [<version>] - <date>`, and lists the changelog among the files it wrote, instead of leaving the heading for the ship to fix by hand; it refuses a changelog with no `## Unreleased` and then writes nothing. `/slipway:ship` says it tags the merge commit, not the ship commit (§4.5 step 8).
+- `slipway worktree remove D<n>` brings the local default branch up to origin before it removes anything, with `git pull --ff-only` where a checkout has it and `git fetch origin <default>:<default>` where none does, so a main checkout on another branch gets the merge too; it removes nothing when that fails. `/slipway:ship` runs it from the main checkout, since on Windows a shell inside the worktree keeps the folder, and no longer pulls separately (§4.5 step 9, §14).
 
 ## 0.2.1 — 2026-11-27
 
