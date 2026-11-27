@@ -107,7 +107,7 @@ Three consequences:
 
 - **The step check splits in two.** The plugin's half is generic: it records the tree a green run proved (a file list and a head, in the worktree's git directory), computes the changed paths since it, and hands them to the repository's `step-check` command in a file named by `SLIPWAY_CHANGED_PATHS`, with `SLIPWAY_BASE` beside it. The repository's half knows its own tools — a monorepo's task graph, a test runner's "related files" mode, a bundle budget. Another stack writes its own in twenty lines, or names its whole test command and accepts that a step runs more than it reaches.
 - **The lane's environment is a command, not a mechanism.** `lane.setup` runs once when a lane's worktree is made, with `SLIPWAY_LANE` (`d45`) and `SLIPWAY_BRANCH` in its environment. One repository creates a database per lane; another starts a compose project or creates a schema; many have no setup at all.
-- **The forge is an adapter.** `github` uses `gh` for the four verbs the process needs — open a draft pull request, read a workflow run, comment, merge; `gitlab` would use `glab` for the same four; `none` has no pull request: the ship merges the lane into the default branch locally with `--no-ff` and pushes, the commit bodies and the decisions file are the record, and `CI:` can only be `off`. v0.2 ships `github` and `none`.
+- **The forge is an adapter.** `github` uses `gh` for the four verbs the process needs — open a draft pull request, read a workflow run, comment, merge; `gitlab` would use `glab` for the same four; `none` has no pull request: the ship merges the lane into the default branch locally with `--no-ff` and pushes, the commit bodies and the decisions file are the record, and `CI:` can only be `off`. v0.1 ships `github` and `none`.
 
 The plugin's scripts have **no dependencies**: Node's standard library only. A generated file is written as the generator renders it and then passed to `commands.format` when the repository names one, so the byte-for-byte comparison in `docs-check` is made after the repository's own formatter has run.
 
@@ -193,7 +193,7 @@ CI is neither always on nor always off: some projects pay for it, some lanes wan
 
 `[skip ci]` is honoured by GitHub Actions, GitLab CI, Azure Pipelines, CircleCI and Buildkite; Jenkins needs a plugin for it. A CI system that ignores the marker turns `at-ship` and `off` into `on` for cost, which the operator should know when choosing the default.
 
-The default comes from the config (`ci.default`), `/slipway:scope` asks it in the decision batch, and the line may be edited mid-lane: each step reads the header when it starts. Pushes to the default branch follow `ci.main`, never a lane's. Two consequences: a forge's "required status check" protection cannot be on while any lane may be `off` or `at-ship`, since it would block that lane's merge — the ship skill makes the check instead; and a lane that must have CI enforced by the forge can use a distinct branch prefix a ruleset targets, which v0.2 does not start with.
+The default comes from the config (`ci.default`), `/slipway:scope` asks it in the decision batch, and the line may be edited mid-lane: each step reads the header when it starts. Pushes to the default branch follow `ci.main`, never a lane's. Two consequences: a forge's "required status check" protection cannot be on while any lane may be `off` or `at-ship`, since it would block that lane's merge — the ship skill makes the check instead; and a lane that must have CI enforced by the forge can use a distinct branch prefix a ruleset targets, which v0.1 does not start with.
 
 ### 4.7 The ledger, split by what reads it
 
@@ -266,13 +266,11 @@ Each was put with a recommendation and taken as recommended, unless noted.
 
 The repository works in two stages, because the plugin cannot run itself before it exists.
 
-**v0.1 — the extraction, under plain Claude Code.** No process layer of its own: conventional commits on short branches, the built-in `/ship` to commit, open the pull request and watch it, `/code-review` on the diff. The gate is `node --test` and `claude plugin validate . --strict`, in a workflow that runs in seconds, so CI is simply on. Releases are semver tags. The content: the skills, agents and generic scripts of the method's first home, ported and renamed, every build-tool name replaced by `slipway run`; the config schema and `init`; the repository as its own marketplace; and the two spikes of §11 first — the `bin/slipway` shim on Windows, `${CLAUDE_PLUGIN_ROOT}` in a forked skill. Done when `claude plugin validate --strict` and `node --test` are green and the four commands run end to end on a throwaway deliverable in a scratch clone; tag `v0.1.0`.
+**v0.1 — the simplified process, built from this document.** The plugin is written from the design, not extracted from another repository; the method's first home is reference reading only, for what each step does in practice and which edge cases its tests guard. It is built under plain Claude Code, because it cannot run itself before it exists: conventional commits on short branches, the built-in `/ship` to commit, open the pull request and watch it, `/code-review` on the diff. The gate is `node --test` and `claude plugin validate . --strict`, in a workflow that runs in seconds, so CI is simply on. Releases are semver tags. The content is §4 directly: the six commands — `plan`, `scope`, `build`, `ship`, `adr`, `init` — under their byte ceilings (§4.1); the agents of §3.2 with models by role (§6); lanes from branches (§4.2); the narrative in commit bodies and the decisions file (§4.3); `build` on Claude Code's primitives (§4.4); `ship` in nine steps with `release` (§4.5); `CI:` per lane (§4.6); the three-file ledger (§4.7); the scripts behind `slipway` and the config schema; the repository as its own marketplace; and the two spikes of §11 first. Done when `claude plugin validate . --strict` and `node --test` are green; when one throwaway deliverable in a scratch repository is taken through `/slipway:init`, `plan`, `scope`, `build` and `ship` end to end, once with `forge: none` and once with `forge: github` on a private scratch repository; and when `/slipway:init --brownfield` has run on this repository with the config below in place. Tag `v0.1.0`.
 
-**v0.2 — the simplified process, developed with the plugin itself.** `claude --plugin-dir .` loads the working copy, `/slipway:init` runs on this repository, and every later change is a lane here. `build` replaces the step loop (§4.4); lanes from branches (§4.2); the narrative in commits and the decisions file (§4.3); `ship` in nine steps with `release` (§4.5); `CI:` per lane (§4.6); `plan`; the generated ledger table (§4.7); skills rewritten under their byte ceilings; models by role (§6). Done when a deliverable of this repository is scoped, built and shipped on v0.2 and `slipway report` prints a step's fixed load under 40 KB; tag `v0.2.0`.
+**v0.2 — measured, developed with the plugin itself.** From the end of v0.1 every change to this repository is a lane run on the plugin (`claude --plugin-dir .` loads the working copy). Two changes make v0.2. The ledger table is **generated from the plan files' headers**, with `docs-check` refusing it stale (§4.7's end state), so the ledger stops being a merge surface and a branch-first `scope` is conflict-free. And the ceilings come down to measured figures: the first lanes on v0.1 record their steps' wall time, the builder's token use and `slipway report`'s fixed load; the numbers go in the changelog, and the ceilings of §4.1 and §7 are lowered to what was measured. Done when a deliverable of this repository is scoped, built and shipped with the generated table and `slipway report` prints a step's fixed load under 40 KB; tag `v0.2.0`.
 
-**Then measure.** The first consumer lane on v0.2 records its steps' wall time and the builder's token use; the numbers go in the changelog and the ceilings are lowered to what was measured.
-
-Three kinds of consumer prove §12's claims: this repository is the greenfield case from v0.2 on; the method's first home is the brownfield case when it adopts v0.1; a new repository of the operator's own is the second greenfield case.
+Three kinds of consumer prove §12's claims: this repository, from the end of v0.1; the method's first home, the first brownfield consumer, when it adopts Slipway by §13.5; and a new repository of the operator's own, the second greenfield case.
 
 This repository's own config, the simplest consumer there is and the reference example in the README:
 
@@ -406,7 +404,7 @@ loads the working copy for one session without installing; `/reload-plugins` pic
 
 ### 13.3 Publishing
 
-1. Tag the repository `v0.1.0`; set the same string in `plugin.json`'s `version` and the marketplace entry. The version string is what pins consumers: they stay on it until the author changes it. From v0.2 the ship does this through the `release` block.
+1. Tag the repository `v0.1.0`; set the same string in `plugin.json`'s `version` and the marketplace entry. The version string is what pins consumers: they stay on it until the author changes it. From the end of v0.1 the ship does this through the `release` block.
 2. Consumers' `git` credentials are what clone the marketplace; a public repository needs none. SSH is tried first for the `owner/repo` form and HTTPS otherwise.
 3. Releases are commits that bump `version` and the changelog; a consumer moves by `claude plugin update slipway@slipway`. Auto-update is **off by default** for a third-party marketplace, which is what a process plugin wants: a repository takes a new process version at a lane boundary, on purpose.
 
@@ -428,12 +426,65 @@ Once per clone (every collaborator, every new machine): project-level `enabledPl
 
 ### 13.5 Adopting Slipway in a repository that already runs the method
 
-For a repository that has its own skills, agents and scripts for this workflow, adoption is one lane with no behaviour change:
+A repository that already runs the method on its own skills, agents and scripts takes the brownfield path of §12, as one lane with no behaviour change:
 
-1. `slipway.config.json` with today's commands verbatim; the repository's own scripts stay, so the team's usual commands still work. Its step check and lane setup become the `step-check` and `lane.setup` commands.
-2. The two install commands, committed settings, the `CLAUDE.md` sentence, the README's setup line.
-3. The old process skills and agents deleted; the repository's `.claude/README.md` shrunk to what is repository-specific; its budget file loses the entries for files that left.
-4. Done when the four commands run there beside Claude's own `/ship`, which is untouched, and the lane itself ships with `/slipway:ship`.
+1. The two install commands of §13.4, the committed settings, the `CLAUDE.md` sentence and the README's setup line.
+2. `slipway.config.json` with today's commands verbatim. The repository's own step check and lane setup become its `step-check` and `lane.setup` commands, and the team's usual commands still work.
+3. The rule lines move into each record's `## Rules` section (§5.2) as a data step: each line of the hand-kept digests goes to the record it cites, and the repository proves the move with its own word tie — the words of every rule line before the move are the words after it.
+4. `slipway digest` generates the digests from those sections, and the generated files replace the hand-kept ones.
+5. `/slipway:init --brownfield` writes the three-file ledger from the existing one: the `planned` and `in progress` rows to `README.md`, the shipped rows to `SHIPPED.md`, the build plan to `ROADMAP.md`.
+6. The consolidated process record (§5.1) supersedes the repository's chain of process records, whole.
+7. The old process skills, agents and scripts are deleted; the repository's `.claude/README.md` shrinks to what is repository-specific; its budget file loses the entries for files that left.
+8. Done when the six commands run there beside Claude's own `/ship`, which is untouched, and that lane is the first shipped with `/slipway:ship`.
+
+## 14. Cases the first home's scripts guard
+
+Reading the method's first home for v0.1 turned up cases its scripts and tests guard that the sections above do not mention. Each is listed with what Slipway does about it, so that none is dropped silently. "Kept" means the named script guards it and a test proves it; "declined" says why not.
+
+**The lock** (`run`, §3.3):
+
+- Two waiters that read the same dead holder must not both take over: the slower one would remove the faster one's live lock. Kept: a waiter takes over only under a claim it creates atomically beside the lock, re-reads the holder under the claim, and clears a claim left by a waiter that died holding it after a grace period.
+- A runner killed by a signal it cannot catch (`SIGKILL`; on Windows nearly every stop) leaves its command running outside the lock, and the next waiter sees a dead holder. Kept, more simply than a watching process: the lock names the shell's process as well as the runner's, and is stale only when both are gone.
+- A command that calls `slipway run` for a lock its own tree holds, the bounded wait read from the environment and refused when it is not a number, a held lock never deleted by a session: kept, as built.
+- Windows reuses process ids, so a dead holder's id may name a live stranger. Declined: the lock then reads as live and the wait times out naming the holder; the operator removes it. Rare, and visible.
+
+**The proved tree** (`proved-tree`, §3.3):
+
+- The record is the worktree's own, in its git directory, never in the repository or the common directory; another worktree's proof is not this one's.
+- Untracked files count as changed; ignored files do not.
+- A record whose head is no longer an ancestor of `HEAD`, or whose tree git no longer has, is ignored rather than trusted: rewritten history proves nothing.
+- With no usable record, the base is the merge base of `HEAD` with the remote's default branch where it exists, else the local one. `--base <ref>` overrides both. The first line of the output names the base and why.
+- A red run records nothing; only the repository's `step-check` exiting zero moves the record.
+
+**Digests** (`rules-digest`, §5.2):
+
+- A rule's `(with: …)` naming a record that does not exist or is not `accepted` is refused, and so is an `(areas: …)` naming an area the config does not have. A line with no `(areas: …)` joins the general digest; a line may join several.
+- Supersession by a delta. The first home kept a delta-superseded parent's rule lines in force "as carried by" the successor, which took a parser for which references in a status line are successors and which are prose. Declined: in Slipway only `accepted` records contribute lines, and a successor that leaves some of a parent's rules standing carries those lines in its own `## Rules` with `(with: <parent>)`. The parent's body stays untouched; the generator reads one status.
+- An accepted record with no rule line was refused there. Declined as a refusal, since not every record governs code; the `adr-reviewer` reports an accepted record that governs code and has no `## Rules`.
+- The 120-word cap was grandfathered for older records by number. Kept by diff instead of by number or date: `docs-check` refuses an over-long line only in a record the current branch adds or changes against the default branch, so a brownfield move (§13.5 step 3) carries old lines as they are.
+- Committed digests that differ from the generator's output, after `commands.format`, are refused: kept, as §3.3 says.
+
+**The ledger, plans and decisions** (`docs-check`, §4.3, §4.7):
+
+- A ledger without its tag line, a row whose plan link does not resolve, a plan without the header lines `scope` writes: refused.
+- A step titled as a close-out, or one whose done-when is the definition of done: refused in plans that are not `shipped`, so a brownfield corpus's history is read as it is.
+- Decisions-file lines are read by shape: `Provisional (D<n>.<step>):` and `Owed (D<n>.<step>):` open, closed by `Ratified YYYY-MM-DD`, `Overturned YYYY-MM-DD, …` or `Paid D<m>.<step>`. A `shipped` plan with an open line is refused naming the file and line; a line in no known shape is refused rather than read as closed.
+- Relative links: the first home checked every relative link in every Markdown file, with care for code fences, angle-bracket targets and percent escapes. Declined beyond the links `docs-check` already parses (ledger rows, `Records:` lines, digest citations, `Proved by:` paths); a general link checker is the repository's own.
+- Files are listed with `git ls-files`, so a lane worktree inside the repository, or anything untracked or ignored, is never walked.
+- Line endings stay the repository's `.gitattributes` (§11); `docs-check` reads CRLF and LF alike and does not police them.
+- Specs: a `## Requirement:` has at least one `### Scenario:` with a WHEN and a THEN line and a `Proved by:` line whose backticked paths exist. Off when `docs.specs` is `null`.
+
+**Budgets** (`docs-check`, §7): the budget file is `slipway.budget.json` beside the config, an object from a path or a glob to a ceiling in bytes. A path entry wins over a glob; where two globs match, the lower ceiling holds; an entry that matches no file, and an entry that is not a positive whole number, are refused, so a ceiling cannot outlive the file it guarded.
+
+**Lane worktrees** (`lane-worktree`, §4.2): a file the `lane.copy` list names and the checkout lacks is skipped and named; one the worktree already has is left alone; contents are never printed. A worktree already at the path on the lane's branch is reused; one on another branch is refused. The branch is checked out where it exists and cut from the current head where it does not.
+
+**Build and ship** (§4.4, §4.5):
+
+- A lane on a branch the `lane.branch` pattern does not match, as a cloud session's given branch: the plan's `- Branch:` line names it, and `build` and `ship` find the lane from that line when the pattern finds none.
+- A session that may not push to the default branch: the scoping commit rides as the lane branch's first commit and reaches the default branch with the pull request, which `scope` says, and which is safe only while no other lane is open.
+- Reading the last run before a step (`CI: on`): a run cancelled by a later push is superseded, not failed; a run still going is left to the next step; no run because the pull request conflicts means merging the default branch in first; a run that cannot be read is said in the commit body and caught at the ship.
+- A flake is the repository's step check's word, not the plugin's: what it calls one goes in `Flakes:` and is not a failure.
+- `ship`: a tag that already exists stops the ship (a tag is never moved, nothing is ever forced); with a forge the merge commit is fetched and its second parent checked against the lane's head before it is tagged; the annotation is written from a file, verbatim; the gate runs in the background with no timeout of its own.
 
 ## Sources
 
