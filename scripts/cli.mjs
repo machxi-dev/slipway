@@ -39,9 +39,10 @@ const USAGE = `usage: slipway <verb> [args]
   docs-check             the ledger, plans, decisions, records, digests, specs and byte budgets
   worktree [D<n>]        make the lane's worktree, copy lane.copy into it and run lane.setup
   worktree remove D<n>   remove a shipped lane's worktree and branch
-  forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | ready | merge
+  forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | comments | ready | merge
   forge run [--sha <sha>] [--wait] [--log]
-                         the forge's pull request and CI run for this branch (github through gh; none locally)
+                         the forge's pull request and CI run for this branch (github through gh; none locally);
+                         comments prints the first line of each comment (under none, the ones recorded locally)
   release bump patch|minor|major
                          bump the version in release.versionFile and release.also
   tag D<n> --head <sha> [--commit <sha>] [--pr <url>] [--title <t>]

@@ -1,8 +1,11 @@
 // `slipway forge <verb>`: the forge adapter, `github` through `gh` and `none` locally (docs/design.md §3.3, §4.5, §4.6).
-// The verbs: pr-open, pr, comment, ready, merge (the pull request), and run (the last CI run on a commit).
+// The verbs: pr-open, pr, comment, comments, ready, merge (the pull request), and run (the last CI run on a commit).
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { currentBranch } from './git.mjs';
+import { stateDir } from './proved.mjs';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
 const git = (cwd, args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -14,6 +17,23 @@ function gh(root, args) {
   if (r.error?.code === 'ENOENT') throw new Error('gh is not installed; forge "github" needs the GitHub CLI, signed in (gh auth login)');
   if (r.status !== 0) throw new Error(`gh ${args[0]} ${args[1] ?? ''}: ${(r.stderr || r.stdout).trim()}`);
   return r.stdout.trim();
+}
+
+/** forge none keeps a branch's step comments in the worktree's git dir, one JSON string per line. */
+const localComments = (root, branch) => path.join(stateDir(root), 'comments', `${branch.replace(/[^\w.-]+/g, '-')}.jsonl`);
+
+/** The comments recorded for a branch; a line cut short by a crash is skipped. */
+function readLocalComments(file) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((l) => {
+      try {
+        return l ? [JSON.parse(l)] : [];
+      } catch {
+        return [];
+      }
+    });
 }
 
 const hasOrigin = (root) => git(root, ['remote', 'get-url', 'origin']).status === 0;
@@ -79,9 +99,23 @@ export async function forge(root, config, verb, opts = {}) {
       return { code: 0, lines: [`#${pr.number} ${pr.state.toLowerCase()}${pr.isDraft ? ' draft' : ''} mergeable=${pr.mergeable} ${pr.url}`] };
     }
     case 'comment': {
-      if (none) return { code: 0, lines: ['forge none: no pull request to comment on; the commit bodies carry the record'] };
       if (!opts.bodyFile) throw usage('comment needs --body-file');
+      if (none) {
+        const file = localComments(root, branch);
+        mkdirSync(path.dirname(file), { recursive: true });
+        appendFileSync(file, JSON.stringify(readFileSync(opts.bodyFile, 'utf8')) + '\n');
+        return { code: 0, lines: [`forge none: recorded in ${file}`] };
+      }
       return { code: 0, lines: [gh(root, ['pr', 'comment', branch, '--body-file', opts.bodyFile])] };
+    }
+    case 'comments': {
+      let bodies;
+      if (none) {
+        bodies = readLocalComments(localComments(root, branch));
+      } else {
+        bodies = JSON.parse(gh(root, ['pr', 'view', branch, '--json', 'comments'])).comments.map((c) => c.body);
+      }
+      return { code: 0, lines: bodies.map((b) => b.trimStart().split(/\r?\n/)[0]) };
     }
     case 'ready': {
       if (none) return { code: 0, lines: ['forge none: nothing to mark ready'] };
@@ -118,7 +152,7 @@ export async function forge(root, config, verb, opts = {}) {
       }
     }
     default:
-      throw usage('slipway forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | ready | merge | run [--sha <sha>] [--wait] [--log]');
+      throw usage('slipway forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | comments | ready | merge | run [--sha <sha>] [--wait] [--log]');
   }
 }
 
