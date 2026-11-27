@@ -11,7 +11,7 @@ The plugin owns the process and stays out of your stack: it never calls a build 
 
 The documentation is at **[machxi-dev.github.io/slipway](https://machxi-dev.github.io/slipway/)**.
 
-> **Status: early development.** This is the v0.1 skeleton. The commands below are the design, not yet the code. Follow [the changelog](CHANGELOG.md) for what works today.
+> **Status: early development.** The six commands below work today, with the `slipway` runner behind them, with GitHub as the forge or with none. Slipway's own changes are built with it. The process can still change between minor versions; [the changelog](CHANGELOG.md) says what each one added and changed.
 
 ## Commands
 
@@ -48,10 +48,19 @@ Every other clone of that repository runs the second command once. The committed
 ## Developing Slipway
 
 ```sh
-claude --plugin-dir .                   # load this working copy for one session; /reload-plugins picks up edits
-node --test                             # the scripts' tests
-claude plugin validate . --strict       # the manifests and every skill's and agent's frontmatter
+git worktree add --detach ../slipway-plugin origin/main     # once: the copy of the plugin that Claude Code loads
+claude --plugin-dir ../slipway-plugin                       # load it for one session
+node --test                                                 # the scripts' tests
+claude plugin validate . --strict                           # the manifests and every skill's and agent's frontmatter
 ```
+
+Claude Code loads the plugin from a separate worktree of `main`, not from the copy you edit. It treats every file under a `--plugin-dir` path as sensitive and refuses edits to it, so a session that loaded this working copy could not change it. Refresh that worktree between lanes, so the next lane runs on what the last one shipped:
+
+```sh
+git fetch origin && git -C ../slipway-plugin checkout --detach origin/main
+```
+
+Then start a new session, or run `/reload-plugins` in the one you have.
 
 [docs/design.md](docs/design.md) is the design the first versions build to. Changes are conventional commits on short branches, and CI runs both checks above on every pull request.
 
