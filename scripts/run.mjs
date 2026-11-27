@@ -73,6 +73,7 @@ export async function runCommand({ root, config, name, args = [], pluginRoot, lo
       // On POSIX the command leads its own process group, so a signal reaches every process it started
       // and the lock is not released while any of them still runs.
       const child = spawn(command, { cwd: root, shell: true, stdio: 'inherit', env, detached: process.platform !== 'win32' });
+      if (child.pid) release.setChild?.(child.pid);
       const signals = process.platform === 'win32' ? ['SIGINT', 'SIGBREAK'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
       const forward = (sig) => signalTree(child, sig);
       for (const s of signals) process.on(s, forward);

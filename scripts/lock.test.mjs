@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 import { hostname } from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -167,3 +167,41 @@ async function until(cond, ms = 10_000) {
     await new Promise((r) => setTimeout(r, 25));
   }
 }
+
+test('a lock whose runner died while its command’s shell still runs is kept (§14)', async (t) => {
+  const { repo, lock } = setup(t);
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  const shell = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+  t.after(() => shell.kill());
+  mkdirSync(path.dirname(lock), { recursive: true });
+  writeFileSync(lock, JSON.stringify({ token: 'old', pid: dead, child: shell.pid, host: hostname(), cwd: repo, command: 'gate', since: 'then' }));
+  await assert.rejects(acquire(repo, 'gate', { timeoutMs: 0 }), { code: 'ELOCKED' });
+});
+
+test('the lock names the command’s shell while it runs', async (t) => {
+  const { repo, lock } = setup(t);
+  writeFileSync(path.join(repo, 'see-lock.mjs'), `import { readFileSync } from 'node:fs';\nconsole.log('child ' + JSON.parse(readFileSync(process.env.LOCK_FILE, 'utf8')).child);\n`);
+  const r = slipway(repo, ['run', 'gate'], { env: { LOCK_FILE: lock } });
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^child \d+$/m);
+});
+
+test('a stale lock is taken over only under the claim; a claim left by a dead waiter is cleared', async (t) => {
+  const { repo, lock } = setup(t);
+  const dead = spawnSync(process.execPath, ['-e', 'process.exit(0)']).pid;
+  mkdirSync(path.dirname(lock), { recursive: true });
+  const old = JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' });
+  writeFileSync(lock, old);
+  writeFileSync(`${lock}.claim`, '1');
+  // Another waiter holds a fresh claim: this one leaves the stale lock alone.
+  const pending = acquire(repo, 'gate', { timeoutMs: 0 });
+  await new Promise((r) => setTimeout(r, 600));
+  assert.equal(readFileSync(lock, 'utf8'), old);
+  // The claim grows old, as one whose waiter died would: it is cleared and the takeover goes ahead.
+  const then = new Date(Date.now() - 60_000);
+  utimesSync(`${lock}.claim`, then, then);
+  const release = await pending;
+  assert.notEqual(readFileSync(lock, 'utf8'), old);
+  assert.equal(existsSync(`${lock}.claim`), false);
+  release();
+});
