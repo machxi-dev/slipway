@@ -182,13 +182,13 @@ const verbs = {
       return 0;
     }
     if (sub === 'set' && more.length === 2) {
-      setStatus(root, config, parseLaneArg(more[0]).n, more[1]);
+      for (const f of setStatus(root, config, parseLaneArg(more[0]).n, more[1])) out(`wrote ${f}`);
       return 0;
     }
     if (sub === 'ship') {
       const { opts, rest } = options(more, { values: ['pr', 'date'] });
       if (rest.length !== 1) throw new UsageError('ledger ship needs D<n>');
-      shipRow(root, config, parseLaneArg(rest[0]).n, { pr: opts.pr, date: opts.date });
+      for (const f of shipRow(root, config, parseLaneArg(rest[0]).n, { pr: opts.pr, date: opts.date })) out(`wrote ${f}`);
       return 0;
     }
     throw new UsageError('usage: slipway ledger next | add <title> [--scope <line>] | set D<n> <status> | ship D<n> [--pr <url>]');

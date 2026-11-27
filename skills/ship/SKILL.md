@@ -17,7 +17,7 @@ The design's §4.5, §4.6 and §4.7, and the repository's process record. Nine s
 4. **The ship commit.**
    - `slipway adr accept <n>` for each record the plan's `Records:` line names that is still `proposed`; then `slipway digest`.
    - With a `release` block: `slipway release bump <part>`, the part from the plan's `- Release:` line.
-   - `slipway ledger ship D<n> --pr <url>` (the url from `slipway forge pr`; none under `forge: none`) moves the row to `SHIPPED.md` with today's date and marks the plan `shipped`.
+   - `slipway ledger ship D<n> --pr <url>` (the url from `slipway forge pr`; none under `forge: none`) moves the row to `SHIPPED.md` with today's date and marks the plan `shipped`; it prints each file it wrote, and the ship commit takes them all.
    - One changelog line, where the repository keeps a changelog, in its own style.
    - `slipway docs-check` passes; then have `slipway:gate-runner` run `check`.
    - Commit by explicit path, `chore(ship): D<n> — <title>`, body naming the decisions marked and the records accepted; end it with `[skip ci]` **only** when `CI: off`. Push.

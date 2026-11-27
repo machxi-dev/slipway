@@ -149,6 +149,7 @@ export function setStatus(root, config, n, status) {
   const plan = existsSync(planFile) ? setHeader(readFileSync(planFile, 'utf8'), 'Status', status) : null;
   writeFileSync(f.readme, ledger);
   if (plan !== null) writeFileSync(planFile, plan);
+  return [f.readme, ...(plan !== null ? [planFile] : [])].map((p) => path.relative(root, p).split(path.sep).join('/'));
 }
 
 /** Move a row to SHIPPED.md with its date and pull request, and mark the plan shipped (§4.5 step 4). */
@@ -165,6 +166,7 @@ export function shipRow(root, config, n, { pr = '', date = today() } = {}) {
   writeFileSync(f.shipped, shipped);
   writeFileSync(f.readme, removeRow(text, n));
   if (plan !== null) writeFileSync(planFile, plan);
+  return [f.shipped, f.readme, ...(plan !== null ? [planFile] : [])].map((p) => path.relative(root, p).split(path.sep).join('/'));
 }
 
 export { LEDGER_HEADER, rowLine };
