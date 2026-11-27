@@ -150,4 +150,5 @@ The first Windows run stopped before any tool call. The command-line login on th
 ## Not covered
 
 - **Only the Bash tool was tested.** Claude Code on Windows also has a PowerShell tool. The design keeps the runner to the Bash tool, and the skills never ask for PowerShell.
+  - *Later (v0.2):* headless Windows sessions reach for the PowerShell tool first anyway. Claude Code 2.1.323 and 2.1.332 put the plugin's `bin/` on that tool's `PATH` too, but PowerShell cannot run the extensionless file, so `bin/slipway.cmd` now runs it there. A live `claude -p` run with only the PowerShell tool allowed resolved `slipway` to `bin\slipway.cmd`, printed the version with exit code 0, returned exit code 2 for an unknown verb, and showed `CLAUDE_PLUGIN_ROOT` unset. See docs/design.md §13.1 for why there is a `.cmd` and no `.ps1`.
 - **The plugin was loaded with `--plugin-dir`.** An installed plugin, running from its cache path, was not tried.
