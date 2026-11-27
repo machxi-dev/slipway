@@ -1,11 +1,16 @@
 // `slipway init`: make a repository ready (docs/design.md §3.2, §4.7, §12, §13.4).
 // It never overwrites: a file that exists is kept, and a shared file (settings, CLAUDE.md, README) only gains
 // what is missing. Running it twice changes nothing.
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CONFIG_FILE, loadConfig, normalize } from './config.mjs';
 import { currentBranch } from './git.mjs';
+import { isGlob } from './glob.mjs';
+import { LEDGER_HEADER, SHIPPED_HEADER, rowLine, shippedLine, splitLegacy, withRows } from './ledger.mjs';
+import { INDEX_HEADER, listRecords, newRecord, today, upsertIndexRow } from './records.mjs';
+
+export const BUDGET_FILE = 'slipway.budget.json';
 
 export const render = (text, vars) =>
   text.replace(/\{\{(\w+)\}\}/g, (m, key) => (Object.hasOwn(vars, key) ? String(vars[key]) : m));
@@ -100,25 +105,61 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   const tags = config.release
     ? `Tags: \`${config.release.tag}\`, the version in \`${config.release.versionFile}\`, bumped by \`/slipway:ship\`.`
     : `Tags: \`${config.tagPrefix}-D<n>\`, one per shipped deliverable.`;
-  writeNew(path.join(abs(docs.plans), 'README.md'), render(template('ledger.md'), { tags }));
-  writeNew(path.join(abs(docs.plans), 'ROADMAP.md'), template('roadmap.md'));
-  writeNew(path.join(abs(docs.plans), 'SHIPPED.md'), template('shipped.md'));
+  const ledgerFile = path.join(abs(docs.plans), 'README.md');
+  const ledger = render(template('ledger.md'), { tags });
+  const legacy = existsSync(ledgerFile) && !readFileSync(ledgerFile, 'utf8').split(/\r?\n/).some((l) => l.trim() === LEDGER_HEADER);
+  const roadmapFile = path.join(abs(docs.plans), 'ROADMAP.md');
+  const shippedFile = path.join(abs(docs.plans), 'SHIPPED.md');
+  if (legacy && !options.brownfield) {
+    warnings.push(`${rel(ledgerFile)} is a ledger in another shape; run init --brownfield to split it into the three files (§13.5)`);
+  } else if (legacy && (existsSync(roadmapFile) || existsSync(shippedFile))) {
+    warnings.push(`${rel(ledgerFile)} is a ledger in another shape, but ROADMAP.md or SHIPPED.md already exists beside it; split it by hand`);
+  } else if (legacy) {
+    // §13.5 step 5: open rows to the ledger, shipped rows to SHIPPED.md, everything else to ROADMAP.md whole.
+    const split = splitLegacy(readFileSync(ledgerFile, 'utf8'));
+    writeFileSync(ledgerFile, withRows(ledger, LEDGER_HEADER, split.open, rowLine));
+    writeFileSync(shippedFile, withRows(template('shipped.md'), SHIPPED_HEADER, split.shipped, shippedLine));
+    const roadmap = template('roadmap.md');
+    writeFileSync(roadmapFile, split.rest ? `${roadmap.trimEnd()}\n\n## From the previous ledger\n\n${split.rest}\n` : roadmap);
+    actions.push({ action: 'split', path: rel(ledgerFile), note: `${split.open.length} open rows kept, ${split.shipped.length} to SHIPPED.md, the rest to ROADMAP.md` });
+    actions.push({ action: 'wrote', path: rel(shippedFile) }, { action: 'wrote', path: rel(roadmapFile) });
+    if (split.unread.length) warnings.push(`kept as planned, status not read: ${split.unread.join(', ')}`);
+  }
+  if (!legacy) writeNew(ledgerFile, ledger);
+  if (!legacy || !options.brownfield) {
+    writeNew(roadmapFile, template('roadmap.md'));
+    writeNew(shippedFile, template('shipped.md'));
+  }
 
   // The records folder and its index. Brownfield adopts the records already there (§12).
   const recordsDir = abs(docs.records);
-  const existing = existsSync(recordsDir)
-    ? readdirSync(recordsDir)
-        .filter((f) => f.endsWith('.md') && f.toLowerCase() !== 'readme.md')
-        .sort()
-    : [];
-  let index = render(template('records-index.md'), { digests: docs.digests });
-  if (existing.length && options.brownfield) {
-    actions.push({ action: 'adopted', path: docs.records, note: `${existing.length} existing records, read as records without ## Rules` });
-    index += existing.map((f) => indexRow(recordsDir, f)).join('');
-  } else if (existing.length) {
+  const indexFile = path.join(recordsDir, 'README.md');
+  const existing = listRecords(recordsDir);
+  const indexHad = existsSync(indexFile);
+  const slipwayIndex = indexHad && readFileSync(indexFile, 'utf8').split(/\r?\n/).some((l) => l.trim() === INDEX_HEADER);
+  // A corpus without Slipway's index is the repository's own, adopted only when asked (§12).
+  const adopt = existing.length > 0 && !slipwayIndex;
+  if (adopt && !options.brownfield) {
     warnings.push(`${docs.records} already holds ${existing.length} records; run init --brownfield to adopt them (§12)`);
+  } else {
+    const header = render(template('records-index.md'), { digests: docs.digests });
+    if (!slipwayIndex) {
+      mkdirSync(recordsDir, { recursive: true });
+      // An index of the repository's own keeps what it says, and gains Slipway's table below it.
+      writeFileSync(indexFile, indexHad ? `${readFileSync(indexFile, 'utf8').trimEnd()}\n\n${header.replace(/^#.*\n+/, '')}` : header);
+      for (const r of existing) upsertIndexRow(indexFile, r);
+      actions.push({ action: indexHad ? 'updated' : 'wrote', path: rel(indexFile) });
+    }
+    if (adopt) actions.push({ action: 'adopted', path: docs.records, note: `${existing.length} existing records, read as records without ## Rules` });
+    // The process record (§5.1): the first record of a new corpus, accepted; proposed beside an adopted one,
+    // for the adopting lane to accept when it supersedes the old chain (§13.5 step 6).
+    if (!existing.some((r) => /^(\d+\.\s*)?the process$/i.test(r.title))) {
+      const text = render(template('process-record.md'), { plans: docs.plans, digests: docs.digests, status: 'proposed' });
+      const r = newRecord(recordsDir, text, { title: 'The process', status: existing.length ? 'proposed' : 'accepted', date: options.date ?? today() });
+      actions.push({ action: 'wrote', path: rel(path.join(recordsDir, r.file)), note: r.status });
+      if (slipwayIndex) actions.push({ action: 'updated', path: rel(indexFile) });
+    } else if (slipwayIndex) actions.push({ action: 'kept', path: rel(indexFile) });
   }
-  writeNew(path.join(recordsDir, 'README.md'), index);
 
   // Digests and their loaders: one general, plus one per area when areas are named (§5.2, §11).
   const digests = [{ name: 'general', scope: 'the whole repository', paths: null }];
@@ -165,6 +206,9 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   const readme = readdirSync(root).find((f) => /^readme\.(md|markdown)$/i.test(f)) ?? 'README.md';
   appendOnce(path.join(root, readme), 'claude plugin install slipway@slipway', template('readme-setup.md'), actions, rel);
 
+  // Byte ceilings for the files a session is told to read (§7, §14); never below a file's size today (§12).
+  writeBudget(root, config, rel(claudeMd), actions);
+
   const warning = claudeVersionWarning(pluginRoot, installedClaude);
   if (warning) warnings.push(warning);
   return { config, actions, warnings };
@@ -203,12 +247,34 @@ function gitOut(cwd, args) {
   return r.status === 0 ? r.stdout.trim() : '';
 }
 
-/** One row of the records index for an adopted record: its file, its first heading, its Status line. */
-function indexRow(dir, file) {
-  const text = readFileSync(path.join(dir, file), 'utf8');
-  const title = /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? file;
-  const status = /^[-*]?\s*Status:\s*(\S+)/im.exec(text)?.[1]?.toLowerCase() ?? 'unknown';
-  return `| [${file.replace(/\.md$/, '')}](${file}) | ${title.replace(/\|/g, '\\|')} | ${status} |\n`;
+/** The default ceilings, in bytes, by path or glob. */
+export function defaultBudget(config, claudeMd = 'CLAUDE.md') {
+  const { plans, digests } = config.docs;
+  return {
+    [claudeMd]: 4096,
+    [`${plans}/README.md`]: 8192,
+    [`${plans}/ROADMAP.md`]: 32768,
+    [`${plans}/D*.md`]: 16384,
+    [`${plans}/D*.decisions.md`]: 4096,
+    [`${digests}/general.md`]: 12288,
+    [`${digests}/*.md`]: 32768,
+    '.claude/rules/*.md': 1024,
+  };
+}
+
+function writeBudget(root, config, claudeMd, actions) {
+  const file = path.join(root, BUDGET_FILE);
+  if (existsSync(file)) {
+    actions.push({ action: 'kept', path: BUDGET_FILE });
+    return;
+  }
+  const budget = defaultBudget(config, claudeMd);
+  for (const [p, ceiling] of Object.entries(budget)) {
+    if (isGlob(p) || !existsSync(path.join(root, p))) continue;
+    budget[p] = Math.max(ceiling, statSync(path.join(root, p)).size);
+  }
+  writeFileSync(file, `${JSON.stringify(budget, null, 2)}\n`);
+  actions.push({ action: 'wrote', path: BUDGET_FILE });
 }
 
 function appendOnce(file, marker, text, actions, rel) {

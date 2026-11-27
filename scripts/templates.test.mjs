@@ -10,13 +10,14 @@ import { PLUGIN_ROOT } from './testing.mjs';
 const template = (name) => readFileSync(path.join(PLUGIN_ROOT, 'templates', name), 'utf8');
 const headings = (md) => [...md.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
 
-test('§13.1 lists these templates, apart from the process record, which comes with the skills', () => {
+test('§13.1 lists these templates', () => {
   assert.deepEqual(readdirSync(path.join(PLUGIN_ROOT, 'templates')).sort(), [
     'claude-md.md',
     'decisions.md',
     'digest.md',
     'ledger.md',
     'plan.md',
+    'process-record.md',
     'readme-setup.md',
     'record.md',
     'records-index.md',
