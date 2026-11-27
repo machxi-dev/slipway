@@ -108,7 +108,7 @@ export function digest(root, config, template, { check = false } = {}) {
     const abs = path.join(root, file);
     const had = existsSync(abs) ? readFileSync(abs) : null;
     if (!config.commands.format) {
-      if (had !== null && lf(had) === text) continue;
+      if (had !== null && lf(had) === lf(Buffer.from(text))) continue;
       if (check) stale.push(file);
       else {
         mkdirSync(path.dirname(abs), { recursive: true });
@@ -131,7 +131,10 @@ export function digest(root, config, template, { check = false } = {}) {
       throw err;
     }
     if (check) restore();
-    if (had !== null && lf(had) === lf(formatted)) continue;
+    if (had !== null && lf(had) === lf(formatted)) {
+      if (!check) restore();
+      continue;
+    }
     if (check) stale.push(file);
     else written.push(file);
   }

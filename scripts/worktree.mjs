@@ -1,5 +1,5 @@
 // `slipway worktree D<n>`: a lane's worktree, its copied files and its setup (docs/design.md §3.3, §4.2, §14).
-import { copyFileSync, existsSync, mkdirSync, rmdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, realpathSync, rmdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { laneWorktree } from './config.mjs';
@@ -14,8 +14,12 @@ const ok = (cwd, args) => git(cwd, args).status === 0;
 
 /** Whether git still lists `dir` as one of the repository's worktrees. */
 function registered(main, dir) {
+  // git prints the real path; the lane's may run through a symlink (macOS /var is /private/var).
   const norm = (p) => {
-    const r = path.resolve(p);
+    let r = path.resolve(p);
+    try {
+      r = realpathSync.native(r);
+    } catch {}
     return process.platform === 'win32' ? r.toLowerCase() : r;
   };
   const out = git(main, ['worktree', 'list', '--porcelain']).stdout ?? '';
@@ -87,7 +91,7 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
       const r = git(main, ['worktree', 'remove', dir]);
       // On Windows git empties the folder and drops the worktree, then fails to delete a folder a shell holds
       // open. That is done enough: the branch can go, and the empty folder goes once the shell lets it.
-      if (r.status !== 0 && registered(main, dir)) throw new Error(`git worktree remove: ${r.stderr.trim()}`);
+      if (r.status !== 0 && registered(main, dir)) throw new Error(`git worktree remove: ${r.stderr.trim()}; close any shell inside ${dir}, then run \`slipway worktree remove D${lane.n}\` from ${main}`);
     }
     if (existsSync(dir)) {
       try {
@@ -98,7 +102,6 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
     }
     if (!existsSync(dir)) log(`removed ${dir}`);
   }
-  rmSync(localComments(main, lane.branch), { force: true });
   if (ok(main, ['show-ref', '--verify', '-q', `refs/heads/${lane.branch}`])) {
     const r = git(main, ['branch', '-d', lane.branch]);
     if (r.status !== 0) throw new Error(`git branch -d ${lane.branch}: ${r.stderr.trim()}`);
@@ -109,4 +112,6 @@ export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
     if (r.status !== 0) throw new Error(`git push origin --delete ${lane.branch}: ${r.stderr.trim()}`);
     log(`deleted origin/${lane.branch}`);
   }
+  // Last, so a failed branch delete keeps the lane's record of which steps were reviewed.
+  rmSync(localComments(main, lane.branch), { force: true });
 }

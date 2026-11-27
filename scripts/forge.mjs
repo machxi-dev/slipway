@@ -95,7 +95,9 @@ export async function forge(root, config, verb, opts = {}) {
       // A lane just opened has no commit of its own, and a forge refuses a pull request with nothing in it:
       // the pull request waits for the first step, whose build opens it with the same verb.
       git(root, ['fetch', '-q', 'origin', config.defaultBranch]);
-      const ahead = git(root, ['rev-list', '--count', `origin/${config.defaultBranch}..${branch}`]);
+      // What the forge compares is origin's branch, not this checkout's.
+      const head = remoteHead(root, branch) ?? branch;
+      const ahead = git(root, ['rev-list', '--count', `origin/${config.defaultBranch}..${head}`]);
       if (ahead.status === 0 && ahead.stdout.trim() === '0') {
         return { code: 0, lines: [`no commits on ${branch} beyond ${config.defaultBranch} yet: the pull request opens with the first step`] };
       }
