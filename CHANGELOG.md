@@ -4,7 +4,16 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 
 ## Unreleased
 
+### Added
+
+- `slipway report [D<n>[.<k>]] [--check]`: a step builder's fixed load, file by file — the always-on memory and the rules it imports, the `step-builder` body, what `slipway lane --step` prints, the area rules the step's paths reach and its conventions skills — against the 40 KB target; `--check` exits 1 over it (§7).
+- [docs/measurements.md](docs/measurements.md): the fixed load measured on two lanes in the scratch repository, and how to measure it again. A step's fixed load measured 7.7–8.2 KB (about 3k tokens); the steps' builders took 36–37 s and peaked at 24k tokens of context, of which about 12k is Claude Code's own (§9).
+
 ### Changed
+
+- An area's rules now load only for a step that works in the area. `slipway digest` writes each area's loader, `.claude/rules/slipway-<area>.md`, with the digest inline instead of an `@` import, because Claude Code reads a rule's imports at session start even when the rule has `paths:`. A repository on 0.1 runs `slipway digest` once; `docs-check` names the loaders until it does (§5.2).
+- The default ceilings in `slipway.budget.json` come down to what keeps a step reaching one area under 40 KB: the general digest 12 KB → 8 KB, an area digest 32 KB → 12 KB; `.claude/rules/*.md` is split into `.claude/rules/slipway.md` (1 KB) and `.claude/rules/slipway-*.md` (13 KB, an area's digest inline). A repository on 0.1 makes the same split in its budget file, since a 1 KB ceiling would refuse an inline loader (§7).
+- Every skill and agent has its own byte ceiling, its size measured at this release rounded up to 512 bytes; `build` comes down to 5,632 and the agents to 1.5–2.5 KB (§4.1).
 
 - The ledger's table is generated from the plans' headers and the roadmap's planned entries: `slipway ledger generate [--check]`; `docs-check` refuses it stale and refuses a row with no source rather than drop it; `ledger add`, `set` and `ship` regenerate it, and a merge conflict in it is resolved by regenerating (§4.7).
 
