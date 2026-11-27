@@ -68,10 +68,11 @@ test('the ledger verbs add, open and ship a row, and the plan’s Status follows
   assert.match(read(repo, 'docs/plan/README.md'), /^\| \[D1\]\(D1\.md\) \| Refunds \| in progress \|$/m);
   assert.match(read(repo, 'docs/plan/D1.md'), /^- Status: in progress$/m);
   assert.equal(slipway(repo, ['ledger', 'set', 'D1', 'shipped']).code, 2);
-  assert.equal(slipway(repo, ['ledger', 'ship', 'D1', '--pr', 'https://x/pull/3', '--date', '2026-11-27']).stdout, 'wrote docs/plan/SHIPPED.md\nwrote docs/plan/README.md\nwrote docs/plan/D1.md\n');
+  assert.equal(slipway(repo, ['ledger', 'ship', 'D1', '--pr', 'https://x/pull/3', '--date', '2026-11-27']).stdout, 'wrote docs/plan/SHIPPED.md\nwrote docs/plan/README.md\nwrote docs/plan/D1.md\nwrote docs/plan/ROADMAP.md\n');
   assert.doesNotMatch(read(repo, 'docs/plan/README.md'), /Refunds/);
   assert.match(read(repo, 'docs/plan/SHIPPED.md'), /^\| \[D1\]\(D1\.md\) \| Refunds \| 2026-11-27 \| https:\/\/x\/pull\/3 \|$/m);
   assert.match(read(repo, 'docs/plan/D1.md'), /^- Status: shipped 2026-11-27$/m);
+  assert.match(read(repo, 'docs/plan/ROADMAP.md'), /## Planned\n\n<!--[^]*-->\n\n## Candidates/, 'the shipped row leaves the roadmap');
   assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D2');
 });
 
