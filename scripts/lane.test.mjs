@@ -13,6 +13,36 @@ function ready(t) {
   assert.equal(slipway(repo, ['init', '--check', 'x']).code, 0);
   return repo;
 }
+const write = (repo, p, text) => {
+  mkdirSync(path.dirname(path.join(repo, p)), { recursive: true });
+  writeFileSync(path.join(repo, p), text);
+};
+
+/** ready(t), committed, with a bare origin that has main. */
+function withOrigin(t) {
+  const repo = ready(t);
+  const origin = path.join(path.dirname(repo), 'origin.git');
+  git(path.dirname(repo), 'init', '-q', '--bare', origin);
+  git(repo, 'remote', 'add', 'origin', origin);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'init');
+  git(repo, 'push', '-q', 'origin', 'main');
+  return repo;
+}
+
+/** Commit files on a new branch from main and push it to origin, leaving neither the branch nor its remote ref here. */
+function pushBranch(repo, branch, files) {
+  git(repo, 'checkout', '-q', '-b', branch, 'main');
+  for (const [p, text] of Object.entries(files)) write(repo, p, text);
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', branch);
+  git(repo, 'push', '-q', 'origin', branch);
+  git(repo, 'checkout', '-q', 'main');
+  git(repo, 'branch', '-q', '-D', branch);
+  git(repo, 'update-ref', '-d', `refs/remotes/origin/${branch}`);
+}
+
+const planD = (n, status = 'in progress') => PLAN.replace('# D4.', `# D${n}.`).replace('in progress', status).replace('lane/D4', `lane/D${n}`);
 
 test('globs overlap when one literal prefix starts the other; skills come from the areas a step reaches', (t) => {
   assert.ok(overlaps('apps/api/**', 'apps/api/src/x.ts'));
@@ -62,6 +92,37 @@ test('the step brief prints each conventions skill\'s SKILL.md path, or that it 
   assert.match(r.stdout, /^status: in progress; CI: at-ship$/m);
 });
 
+test('the step brief prints the plan\'s constraints', (t) => {
+  const repo = ready(t);
+  git(repo, 'checkout', '-q', '-b', 'lane/D4');
+  write(repo, 'docs/plan/D4.md', PLAN.replace('## Done when', '## Constraints\n\n- No ceiling rises in this lane.\n- Amounts are cents ([0003](../adr/0003-money.md)).\n\n## Done when'));
+  let r = slipway(repo, ['lane', '--step', '2']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^Refund part of an order\.\n\n## Constraints\n\n- No ceiling rises in this lane\.\n- Amounts are cents \(\[0003\]\(\.\.\/adr\/0003-money\.md\)\)\.\n\n### 2\. The refund endpoint\n/m, 'after the header, before the step');
+  assert.doesNotMatch(r.stdout, /## Done when|### 1\./, 'and nothing else of the plan');
+  // The template's section, left as a comment, is not printed.
+  write(repo, 'docs/plan/D4.md', PLAN.replace('## Done when', '## Constraints\n\n<!-- One bullet each, citing the record it comes from. -->\n\n## Done when'));
+  r = slipway(repo, ['lane', '--step', '2']);
+  assert.doesNotMatch(r.stdout, /Constraints|One bullet/);
+  assert.match(r.stdout, /^Refund part of an order\.\n\n### 2\. The refund endpoint\n/m);
+});
+
+test('the next deliverable counts the plans on the remote\'s lane branches', (t) => {
+  const repo = withOrigin(t);
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D1');
+  const roadmap = read(repo, 'docs/plan/ROADMAP.md').replace('## Candidates', '### D5 — Five\n\n## Candidates');
+  pushBranch(repo, 'lane/D2', { 'docs/plan/D2.md': planD(2, 'planned'), 'docs/plan/ROADMAP.md': roadmap });
+  pushBranch(repo, 'lane/D3', {});
+  pushBranch(repo, 'topic/D40', { 'docs/plan/D40.md': planD(40) });
+  assert.equal(git(repo, 'branch', '--list', '-r', 'origin/lane/*'), '', 'nothing here before the fetch');
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D6', 'the roadmap entry on lane/D2; topic/D40 is not a lane branch');
+  pushBranch(repo, 'lane/D9', {});
+  git(repo, 'remote', 'set-url', 'origin', path.join(path.dirname(repo), 'gone.git'));
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D6', 'a failed fetch reads the refs already here');
+  git(repo, 'remote', 'remove', 'origin');
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D1', 'no remote, nothing read');
+});
+
 test('the ledger verbs add, open and ship a row, and the plan’s Status follows', (t) => {
   const repo = ready(t);
   assert.equal(slipway(repo, ['ledger', 'add', 'Refunds', '--scope', 'Refund part of an order.']).stdout.trim(), 'D1');
@@ -88,6 +149,23 @@ test('scope warns when an open lane names the same record, or both add migration
     'D6 and D4 (in progress) both name 0003-money.md, 0005-queue.md',
     'D6 and D4 (in progress) both add migrations',
   ]);
+});
+
+test('the overlap warning reads open plans on the remote\'s lane branches', (t) => {
+  const repo = withOrigin(t);
+  const config = loadConfig(repo);
+  const migrating = (text) => text.replace('- CI:', '- Migrations: yes\n- CI:');
+  pushBranch(repo, 'lane/D4', { 'docs/plan/D4.md': migrating(planD(4)) });
+  pushBranch(repo, 'lane/D5', { 'docs/plan/D5.md': planD(5, 'planned') });
+  // A copy of another lane's plan on a lane branch is not that lane's: lane/D7's own plan is.
+  pushBranch(repo, 'lane/D7', { 'docs/plan/D7.md': planD(7, 'shipped 2026-11-27'), 'docs/plan/D8.md': planD(8) });
+  write(repo, 'docs/plan/D6.md', migrating(planD(6, 'planned')));
+  const expected = ['D6 and D4 (in progress) both name 0003-money.md, 0005-queue.md', 'D6 and D4 (in progress) both add migrations'];
+  assert.deepEqual(overlapWarnings(repo, config, 6), expected);
+  write(repo, 'docs/plan/D4.md', migrating(planD(4)));
+  assert.deepEqual(overlapWarnings(repo, config, 6), expected, 'found here and on its branch, it counts once');
+  const r = slipway(repo, ['lane', 'D6', '--overlap']);
+  assert.equal(r.stdout, expected.map((w) => `warning: ${w}\n`).join(''));
 });
 
 test('a row is never lost when SHIPPED.md cannot take it', (t) => {

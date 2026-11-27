@@ -24,10 +24,11 @@ function lane(t) {
   write(repo, 'docs/adr/0002-money.md', '# 0002. Money\n\n- Status: accepted\n\n## Rules\n\n- **Money.** Store cents as integers. (areas: api)\n');
   assert.equal(slipway(repo, ['digest']).code, 0);
   write(repo, '.claude/skills/api-conventions/SKILL.md', '---\nname: api-conventions\ndescription: x\n---\n\n# API\n\nHandlers are thin.\n');
-  write(repo, 'docs/plan/D4.md', PLAN);
+  write(repo, 'docs/plan/D4.md', PLAN.replace('## Done when', `## Constraints\n\n${CONSTRAINT}\n\n## Done when`));
   git(repo, 'checkout', '-q', '-b', 'lane/D4');
   return repo;
 }
+const CONSTRAINT = '- No ceiling rises in this lane.';
 
 test('the helpers read rule frontmatter, imports and bodies as Claude Code does', () => {
   assert.deepEqual(rulePaths('---\npaths:\n  - "src/**"\n  - \'lib/*.js\'\n---\n\nx'), ['src/**', 'lib/*.js']);
@@ -45,7 +46,9 @@ test('`slipway report` prints a step’s fixed load by part, and the area rules 
   assert.equal(r.code, 0, r.stderr);
   const out = r.stdout;
   assert.match(out, /^D4\.2 The refund endpoint — a step builder's fixed load \(§7\)$/m, 'the next unbuilt step');
-  const brief = Buffer.byteLength(slipway(repo, ['lane', '--step', '2']).stdout);
+  const briefText = slipway(repo, ['lane', '--step', '2']).stdout;
+  assert.ok(briefText.includes(`## Constraints\n\n${CONSTRAINT}\n`), 'the brief counted carries the plan\'s constraints');
+  const brief = Buffer.byteLength(briefText);
   const loader = size(repo, '.claude/rules/slipway-api.md') - '---\npaths:\n  - "src/api/**"\n---\n\n'.length;
   const always = size(repo, 'CLAUDE.md') + size(repo, '.claude/rules/slipway.md') + size(repo, 'docs/rules/general.md');
   const skill = Buffer.byteLength('# API\n\nHandlers are thin.\n');
