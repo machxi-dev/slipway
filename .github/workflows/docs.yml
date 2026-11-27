@@ -1,0 +1,77 @@
+name: docs
+
+# Builds the docs site from the repository's own files (site/README.md) and deploys it to GitHub Pages.
+# A pull request builds it only, so a dead link or a drifted page fails there, not on main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+      - docs/**
+      - skills/**
+      - templates/process-record.md
+      - templates/slipway.config.json
+      - scripts/config.mjs
+      - slipway.config.json
+      - .claude-plugin/plugin.json
+      - site/**
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - README.md
+      - CHANGELOG.md
+      - LICENSE
+      - docs/**
+      - skills/**
+      - templates/process-record.md
+      - templates/slipway.config.json
+      - scripts/config.mjs
+      - slipway.config.json
+      - .claude-plugin/plugin.json
+      - site/**
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/.vitepress/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    # The workflow's token is read-only; only this job may publish to Pages.
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

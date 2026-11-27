@@ -9,6 +9,8 @@ Slipway is a [Claude Code](https://claude.com/claude-code) plugin that gives a r
 
 The plugin owns the process and stays out of your stack: it never calls a build tool by name. You tell it your commands once in `slipway.config.json`, and it runs them with `slipway run <name>`. The same plugin is meant to serve a pnpm monorepo, a Python service, a Rust crate or a Rails app.
 
+The documentation is at **[machxi-dev.github.io/slipway](https://machxi-dev.github.io/slipway/)**.
+
 > **Status: early development.** This is the v0.1 skeleton. The commands below are the design, not yet the code. Follow [the changelog](CHANGELOG.md) for what works today.
 
 ## Commands

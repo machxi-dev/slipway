@@ -6,6 +6,7 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 
 ### Added
 
+- A docs site at [machxi-dev.github.io/slipway](https://machxi-dev.github.io/slipway/), built with VitePress in `site/` from the README, the design, the skills, the process record and this changelog, and deployed to GitHub Pages by `.github/workflows/docs.yml`. Its dependencies stay in `site/`; the plugin keeps none (§13.1).
 - `slipway report [D<n>[.<k>]] [--check]`: a step builder's fixed load, file by file — the always-on memory and the rules it imports, the `step-builder` body, what `slipway lane --step` prints, the area rules the step's paths reach and its conventions skills — against the 40 KB target; `--check` exits 1 over it (§7).
 - `bin/slipway.cmd`: the runner for cmd.exe and the Windows PowerShell tool, which Claude Code gives the plugin's `bin/` too but which cannot run the extensionless `bin/slipway`. It runs that same file with `node`; there is no `.ps1`, which PowerShell would pick first and execution policy can refuse. `*.cmd` files are checked out CRLF (§13.1).
 - [docs/measurements.md](docs/measurements.md): the fixed load measured on two lanes in the scratch repository, and how to measure it again. A step's fixed load measured 7.7–8.2 KB (about 3k tokens); the steps' builders took 36–37 s and peaked at 24k tokens of context, of which about 12k is Claude Code's own (§9).
