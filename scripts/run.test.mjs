@@ -39,7 +39,10 @@ test('a command runs from the repository root with the SLIPWAY_* variables', (t)
     SLIPWAY_COMMAND: 'step-check',
     SLIPWAY_PLUGIN_ROOT: PLUGIN_ROOT,
     SLIPWAY_BRANCH: 'main',
+    SLIPWAY_BASE: p.env.SLIPWAY_BASE,
+    SLIPWAY_CHANGED_PATHS: p.env.SLIPWAY_CHANGED_PATHS,
   });
+  assert.match(p.env.SLIPWAY_BASE, /^[0-9a-f]{40,64}$/);
 });
 
 test('a SLIPWAY_BRANCH or SLIPWAY_LANE inherited from an outer run is not passed on when it does not apply', (t) => {

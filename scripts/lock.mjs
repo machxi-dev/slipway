@@ -13,6 +13,8 @@ export const HELD = 'SLIPWAY_LOCK_TOKEN';
 
 const POLL_MS = 250;
 const UNREADABLE_GRACE_MS = 10_000;
+/** A takeover claim this old was left by a waiter that died while holding it. */
+const CLAIM_GRACE_MS = 10_000;
 
 function alive(pid) {
   try {
@@ -32,7 +34,10 @@ function readOwner(file) {
   }
 }
 
-/** A holder is stale when it ran on this machine and its process is gone, or its file stayed unreadable. */
+/**
+ * A holder is stale when it ran on this machine and both its runner and the command's shell are gone, or its
+ * file stayed unreadable. The shell outlives a runner killed by a signal it cannot catch (§14).
+ */
 function stale(file, owner) {
   if (owner === undefined) return false;
   if (owner === null) {
@@ -42,7 +47,22 @@ function stale(file, owner) {
       return false;
     }
   }
-  return owner.host === hostname() && !alive(owner.pid);
+  return owner.host === hostname() && !alive(owner.pid) && !(owner.child && alive(owner.child));
+}
+
+/** Take the takeover claim, clearing one a dead waiter left behind. True when this process holds it. */
+function claim(file) {
+  const c = `${file}.claim`;
+  try {
+    writeFileSync(c, String(process.pid), { flag: 'wx' });
+    return true;
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  }
+  try {
+    if (Date.now() - statSync(c).mtimeMs > CLAIM_GRACE_MS) unlinkSync(c);
+  } catch {}
+  return false;
 }
 
 const describe = (o) =>
@@ -73,17 +93,25 @@ export async function acquire(cwd, command, { timeoutMs, onWait = () => {}, held
       // A locked command running `slipway run` for another locked command: the lock is already ours.
       const nested = () => {};
       nested.token = heldAbove;
+      nested.setChild = () => {};
       return nested;
     }
     if (stale(file, owner)) {
-      // Judge the file again just before removing it, so a waiter that already replaced it keeps its lock.
-      const again = readOwner(file);
-      const same = owner === null ? again === null : again?.token === owner.token;
-      if (same && stale(file, again)) {
+      // Only one waiter takes over: it claims first, then judges the holder again under the claim (§14).
+      if (claim(file)) {
         try {
-          unlinkSync(file);
-        } catch {}
+          const again = readOwner(file);
+          const same = owner === null ? again === null : again?.token === owner.token;
+          if (same && stale(file, again)) unlinkSync(file);
+        } catch {
+        } finally {
+          try {
+            unlinkSync(`${file}.claim`);
+          } catch {}
+        }
+        continue;
       }
+      await sleep(POLL_MS);
       continue;
     }
     if (Date.now() >= deadline) {
@@ -99,6 +127,10 @@ export async function acquire(cwd, command, { timeoutMs, onWait = () => {}, held
   }
   let released = false;
   release.token = token;
+  /** Name the command's shell in the lock, so the lock stays held while it runs even if this process dies. */
+  release.setChild = (pid) => {
+    if (readOwner(file)?.token === token) writeFileSync(file, JSON.stringify({ ...me, child: pid }));
+  };
   return release;
   function release() {
     if (released) return;

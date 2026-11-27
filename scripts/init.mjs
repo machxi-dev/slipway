@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { CONFIG_FILE, loadConfig, normalize } from './config.mjs';
 import { currentBranch } from './git.mjs';
+import { format, renderDigests } from './digest.mjs';
 import { isGlob } from './glob.mjs';
 import { LEDGER_HEADER, SHIPPED_HEADER, rowLine, shippedLine, splitLegacy, withRows } from './ledger.mjs';
 import { INDEX_HEADER, listRecords, newRecord, today, upsertIndexRow } from './records.mjs';
@@ -167,17 +168,28 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   }
 
   // Digests and their loaders: one general, plus one per area when areas are named (§5.2, §11).
+  // Generated as `slipway digest` would, so the first docs-check finds them current.
+  const rendered = renderDigests(root, config, template('digest.md'));
+  for (const p of rendered.problems) warnings.push(`digest: ${p}`);
   const digests = [{ name: 'general', scope: 'the whole repository', paths: null }];
+  const fresh = [];
   for (const [area, { paths }] of Object.entries(config.areas)) digests.push({ name: area, scope: `\`${area}\``, paths });
   for (const d of digests) {
     const digest = posix(path.join(docs.digests, `${d.name}.md`));
-    writeNew(abs(digest), render(template('digest.md'), { area: d.name, scope: d.scope }));
+    if (!existsSync(abs(digest))) fresh.push(digest);
+    writeNew(abs(digest), rendered.digests[d.name].text);
     // A loader with paths loads when Claude works on a matching file; one without loads in every session.
     const frontmatter = d.paths ? `---\npaths:\n${d.paths.map((p) => `  - ${JSON.stringify(p)}`).join('\n')}\n---\n\n` : '';
     const loader = path.join(root, '.claude', 'rules', d.paths ? `slipway-${d.name}.md` : 'slipway.md');
     // An @ import resolves against the file that holds it, so the path is relative to the loader.
     const imported = posix(path.relative(path.dirname(loader), abs(digest)));
     writeNew(loader, render(template('rules-loader.md'), { frontmatter, records: docs.records, digest: imported }));
+  }
+  // The repository's formatter gets the new digests too, as `slipway digest` would give them (§3.3).
+  try {
+    format(root, config, fresh);
+  } catch (err) {
+    warnings.push(err.message);
   }
   if (docs.specs) {
     const specs = abs(docs.specs);

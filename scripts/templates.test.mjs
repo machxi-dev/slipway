@@ -52,7 +52,9 @@ test('a record has the status and date lines and the §11 sections, Rules last (
 test('a plan header carries Status, Records and CI; done-whens and steps are checkboxes (§4.1, §4.6)', () => {
   const p = template('plan.md');
   for (const line of ['- Status: planned', '- Records: {{records}}', '- CI: {{ci}}']) assert.ok(p.includes(`\n${line}\n`), line);
-  assert.deepEqual(headings(p), ['Done when', 'Steps', 'Asked at scope']);
+  assert.ok(p.includes('\n- Branch: `{{branch}}`\n'));
+  assert.deepEqual(headings(p), ['Constraints', 'Done when', 'Steps', 'Asked at scope']);
+  assert.match(p, /^- Done when: /m);
   assert.match(p, /^- \[ \] /m);
 });
 
