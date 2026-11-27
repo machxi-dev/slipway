@@ -313,7 +313,7 @@ This repository's own config, the simplest consumer there is and the reference e
 
 No lane setup, no lock (one worktree at a time is enough here), `CI: on` because a run costs seconds, and a `release` block so that a shipped deliverable is a plugin version. Its records are few — the process record as the first, then one per decision that would be expensive to reverse: the config schema, the forge adapter's four verbs, the commit-body template.
 
-Two things to know about dogfooding. The plugin a session runs is the one in the worktree of `main` (§13.2), so a skill or agent definition a lane edits keeps its old text until the lane ships and that worktree is refreshed — a nuisance, not a hazard, and also how a skill that reads badly in practice gets caught. And a lane here may touch the very skill that is running it; the rule is that a lane runs every step under the skills it started with, and the next lane takes the new ones.
+Two things to know about dogfooding. The plugin a session runs is the one in the worktree of `main` (§13.2), so a skill or agent definition a lane edits keeps its old text until the lane ships and that worktree is refreshed — a nuisance, not a hazard, and also how a skill that reads badly in practice gets caught. And a lane here may touch the very skill that is running it. Every lane shares that one worktree, so it is refreshed only when no lane is open; that is what makes a lane run every step, in whatever session, under the skills it started with, and the next lane take the new ones.
 
 ## 10. Risks
 
@@ -411,7 +411,7 @@ git worktree add --detach ..\slipway-plugin origin/main
 claude --plugin-dir ..\slipway-plugin
 ```
 
-run from the repository, loads the plugin for one session without installing, from a separate worktree of `main` rather than the working copy. Claude Code treats every file under a `--plugin-dir` path as sensitive and refuses edits to it, so a session that loaded the working copy could not edit it (found on 2.1.332). Between lanes the worktree is refreshed, `git fetch origin` then `git -C ..\slipway-plugin checkout --detach origin/main`, and a new session or `/reload-plugins` takes the new text; a lane thus runs on what the last one shipped, never on its own edits. `claude plugin validate . --strict` checks the manifest and every skill's and agent's frontmatter, and runs in CI. The scripts are tested with `node --test` against temporary git repositories.
+run from the repository, loads the plugin for one session without installing, from a separate worktree of `main` rather than the working copy. Claude Code treats every file under a `--plugin-dir` path as sensitive and refuses edits to it, so a session that loaded the working copy could not edit it (found on 2.1.332). Every lane shares that worktree, so it is refreshed only when no lane is open, `git fetch origin` then `git -C ..\slipway-plugin checkout --detach origin/main`, and a new session or `/reload-plugins` takes the new text; a lane thus runs on what the last one shipped, never on its own edits. `claude plugin validate . --strict` checks the manifest and every skill's and agent's frontmatter, and runs in CI. The scripts are tested with `node --test` against temporary git repositories.
 
 ### 13.3 Publishing
 

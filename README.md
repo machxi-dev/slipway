@@ -11,7 +11,7 @@ The plugin owns the process and stays out of your stack: it never calls a build 
 
 The documentation is at **[machxi-dev.github.io/slipway](https://machxi-dev.github.io/slipway/)**.
 
-> **Status: early development.** The six commands below work today, with the `slipway` runner behind them, with GitHub as the forge or with none. Slipway's own changes are built with it. The process can still change between minor versions; [the changelog](CHANGELOG.md) says what each one added and changed.
+> **Status: early development.** Slipway's six commands work today, with the `slipway` runner behind them, with GitHub as the forge or with none. Slipway's own changes are built with it. The process can still change between minor versions; [the changelog](CHANGELOG.md) says what each one added and changed.
 
 ## Commands
 
@@ -54,7 +54,7 @@ node --test                                                 # the scripts' tests
 claude plugin validate . --strict                           # the manifests and every skill's and agent's frontmatter
 ```
 
-Claude Code loads the plugin from a separate worktree of `main`, not from the copy you edit. It treats every file under a `--plugin-dir` path as sensitive and refuses edits to it, so a session that loaded this working copy could not change it. Refresh that worktree between lanes, so the next lane runs on what the last one shipped:
+Claude Code loads the plugin from a separate worktree of `main`, not from the copy you edit. It treats every file under a `--plugin-dir` path as sensitive and refuses edits to it, so a session that loaded this working copy could not change it. Every lane shares that one worktree, so refresh it only between lanes, when none is open; the next lane then runs on what the last one shipped:
 
 ```sh
 git fetch origin && git -C ../slipway-plugin checkout --detach origin/main
@@ -62,7 +62,7 @@ git fetch origin && git -C ../slipway-plugin checkout --detach origin/main
 
 Then start a new session, or run `/reload-plugins` in the one you have.
 
-[docs/design.md](docs/design.md) is the design the first versions build to. Changes are conventional commits on short branches, and CI runs both checks above on every pull request.
+[docs/design.md](docs/design.md) is the design the first versions build to. Changes are conventional commits on short branches, and CI runs `node --test` and `claude plugin validate . --strict` on every pull request.
 
 ## License
 

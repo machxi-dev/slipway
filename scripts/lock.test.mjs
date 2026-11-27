@@ -86,7 +86,7 @@ test('a lock left by a process that is gone is broken', async (t) => {
   const dead = await deadPid();
   mkdirSync(path.dirname(lock), { recursive: true });
   writeFileSync(lock, JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' }));
-  const r =slipway(repo, ['run', 'gate'], { env: { LOCK_FILE: lock, SLIPWAY_LOCK_TIMEOUT: '0' } });
+  const r = slipway(repo, ['run', 'gate'], { env: { LOCK_FILE: lock, SLIPWAY_LOCK_TIMEOUT: '0' } });
   assert.equal(r.code, 0, r.stderr);
 });
 
@@ -199,7 +199,7 @@ test('a stale lock is taken over only under the claim; a claim left by a dead wa
   const { repo, lock } = setup(t);
   const dead = await deadPid();
   mkdirSync(path.dirname(lock), { recursive: true });
-  const old =JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' });
+  const old = JSON.stringify({ token: 'old', pid: dead, host: hostname(), cwd: repo, command: 'gate', since: 'then' });
   writeFileSync(lock, old);
   writeFileSync(`${lock}.claim`, '1');
   // Another waiter holds a fresh claim: this one leaves the stale lock alone.
