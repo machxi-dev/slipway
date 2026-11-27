@@ -1,6 +1,6 @@
 # 0002. The process
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-27
 - Supersedes: [0001](0001-the-process.md)
 

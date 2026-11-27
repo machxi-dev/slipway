@@ -65,6 +65,27 @@ test('the ledger states the four window rules and the open-lanes sentence (§4.2
   assert.match(l, /^\| D \| Title \| Status \|$/m);
 });
 
+test("the process template carries the process record's rules", () => {
+  // The template is the first record of a new repository, so it cites no parent: `(with: …)` is the record's own.
+  const rules = (md) =>
+    md
+      .replace(/\r\n/g, '\n')
+      .split(/^## Rules\n/m)[1]
+      .trim()
+      .split('\n')
+      .map((l) => l.replace(/ \(with: [^)]*\)$/, ''));
+  const { docs } = JSON.parse(template('slipway.config.json'));
+  const filled = render(template('process-record.md'), { plans: docs.plans, digests: docs.digests, id: '0001', status: 'accepted', date: '2026-11-27' });
+  assert.doesNotMatch(filled, /\{\{\w+\}\}/);
+  const recordsDir = path.join(PLUGIN_ROOT, JSON.parse(readFileSync(path.join(PLUGIN_ROOT, 'slipway.config.json'), 'utf8')).docs.records);
+  const process = readdirSync(recordsDir)
+    .filter((f) => /^\d+-the-process\.md$/.test(f))
+    .map((f) => readFileSync(path.join(recordsDir, f), 'utf8'))
+    .filter((r) => /^- Status: accepted$/m.test(r));
+  assert.equal(process.length, 1, 'one accepted process record');
+  assert.deepEqual(rules(filled), rules(process[0]));
+});
+
 test('render fills known placeholders and leaves unknown ones for a later pass', () => {
   assert.equal(render('{{a}} {{b}}', { a: 1 }), '1 {{b}}');
 });

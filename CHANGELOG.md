@@ -2,6 +2,12 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
+## Unreleased
+
+### Changed
+
+- The process record is [0002](docs/adr/0002-the-process.md), superseding 0001, and the process template `init` writes says the same; a test holds the template's `## Rules` to the record's. A step is its commit plus at most one `fix(<scope>): D<n>.<k> review findings` commit. `/slipway:ship` runs `slipway docs-check` before its commit and no check: the gate on that commit is its one proof. `/slipway:scope` cuts the lane branch before it writes and commits the plan, its decisions file and its records there, and `/slipway:plan` commits its rows on the lane branch of the first row it adds; nothing is committed on the default branch but the ship's merge, so a protected default branch needs no special case. A repository on 0.2 takes the change by superseding its own process record at a lane boundary (§4.1, §4.5, §5.1).
+
 ## 0.2.1 — 2026-11-27
 
 ### Fixed

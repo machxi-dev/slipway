@@ -1,6 +1,6 @@
 # 0001. The process
 
-- Status: accepted
+- Status: superseded by [0002](0002-the-process.md)
 - Date: 2026-11-27
 - Supersedes: none
 
