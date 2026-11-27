@@ -379,7 +379,7 @@ Everything below is from the Claude Code plugin documentation as read on 2026-11
 slipway/                             the repository; also its own marketplace
   .claude-plugin/
     plugin.json                      { "name": "slipway", "version": "0.1.0", "description": …,
-                                       "engines": { "claude-code": ">=2.1.318" } }
+                                       "engines": { "claude-code": ">=2.1.323" } }
     marketplace.json                 { "name": "slipway", "owner": { "name": "machxi-dev" },
                                        "plugins": [ { "name": "slipway", "source": "./", "version": "0.1.0" } ] }
   skills/{plan,scope,build,ship,adr,init}/SKILL.md

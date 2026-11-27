@@ -29,6 +29,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # engines.claude-code is a known field from 2.1.323; older validators warn on it.
-      - run: npm install -g @anthropic-ai/claude-code@2.1.332
+      # The declared minimum (plugin.json engines); engines is unknown to validators before it.
+      - run: npm install -g @anthropic-ai/claude-code@2.1.323
       - run: claude plugin validate . --strict

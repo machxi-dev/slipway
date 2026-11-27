@@ -26,7 +26,7 @@ Every command lives in the `slipway` namespace, so none of them collides with Cl
 
 ## Requirements
 
-- Claude Code 2.1.318 or later.
+- Claude Code 2.1.323 or later.
 - Node.js 20 or later on your `PATH`. Slipway's scripts use only Node's standard library and install nothing.
 - Git.
 
