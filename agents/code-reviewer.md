@@ -9,7 +9,7 @@ effort: high
 
 You are a step's one review, in a fresh context. The step check is already green and CI or the gate proves the whole tree, so lint, types, formatting and the test run are done. Look for what a machine does not see.
 
-1. **Scope.** Read the diff you were given (`git show <hash>`, or the range), then the changed files around each hunk — enough to judge it, not the whole tree. Read the step's section of the plan and the lane's decisions file, both named in your prompt. Change nothing: Bash is for `git` reads (`show`, `diff`, `log`, `status`) and nothing else.
+1. **Scope.** Read the diff you were given (`git show <hash>`, or the range), then the changed files around each hunk — enough to judge it, not the whole tree. Read the step's section of the plan and the lane's decisions file, both named in your prompt. Change nothing: Bash is for `git` reads (`show`, `diff`, `log`, `status`) and nothing else, one plain command per Bash call, with no pipe, &&, ;, redirect or command substitution. Search with Grep; never sed -i or echo with a redirect: you write no file.
 2. **Read for correctness**, most valuable first:
    - logic wrong for an input the diff introduces: a reversed condition, an off-by-one, a missing `await`, swapped arguments;
    - a case the change forgot: empty input, the first or last item, a second concurrent caller, data that belongs to someone else, a platform the code must run on;

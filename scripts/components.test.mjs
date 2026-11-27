@@ -63,6 +63,135 @@ test('skills and agents stay under their byte ceilings (§4.1)', () => {
   }
 });
 
+/** The code in a markdown text, past its frontmatter: each inline span and each line of a fenced block, with its line. */
+export function codeSpans(text) {
+  const lines = text.split('\n');
+  const fm = /^---\n[\s\S]*?\n---\n/.exec(text);
+  const out = [];
+  let fenced = false;
+  for (let i = fm ? fm[0].split('\n').length - 1 : 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+    else if (fenced) {
+      if (line.trim()) out.push({ line: i + 1, code: line.trim(), fenced: true });
+    } else for (const m of line.matchAll(/(`+)(.+?)\1/g)) out.push({ line: i + 1, code: m[2].trim(), fenced: false });
+  }
+  return out;
+}
+
+// The first words that make a span a command, read past any opening group, negation, substitution or assignment.
+const COMMAND_WORDS = new Set(
+  ('slipway git gh node claude cd echo printf sed awk grep rg cat head tail wc ls find xargs rm mv cp mkdir touch tee ' +
+    'until while for if sleep test date bash sh cmd pwsh powershell export curl make npm pnpm yarn npx').split(' '),
+);
+const isCommand = (code) =>
+  COMMAND_WORDS.has(code.replace(/^(\s*(\(|\{\s|!\s|\$\(|\[\[\s|[A-Za-z_]\w*=\S*\s))*\s*/, '').split(/\s+/)[0]);
+
+/** What makes a command more than one plain command, each named; `${CLAUDE_PLUGIN_ROOT}` and `$ARGUMENTS` are allowed. */
+export function shellProblems(code, { fenced = false } = {}) {
+  // A placeholder, `<word>` or `<a few words>`, is not a redirect; `<a|b>` inside one is not a pipe.
+  const text = code.replace(/\$\{CLAUDE_PLUGIN_ROOT\}|\$ARGUMENTS\b/g, '').replace(/<[^\s<>](?:[^<>]*[^\s<>])?>/g, 'X');
+  let expanding = ''; // outside single quotes: where `$` still expands
+  let bare = ''; // outside any quotes: where operators still act
+  let quote = null;
+  for (const ch of text) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else if (quote === '"') expanding += ch;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else {
+      expanding += ch;
+      bare += ch;
+    }
+  }
+  const problems = [];
+  if (/\$\(/.test(expanding) || (fenced && /`/.test(expanding))) problems.push('command substitution');
+  if (/\$(\{|[A-Za-z_]|\d|[@*#?!$-])/.test(expanding)) problems.push('parameter expansion');
+  if (!isCommand(code)) return problems;
+  const ops = [
+    [/&&/, '&&'],
+    [/\|\|/, '||'],
+    [/(^|[^|])\|(?!\|)/, 'a pipe'],
+    [/;/, ';'],
+    [/[<>]/, 'a redirect'],
+    [/(^|[^&])&(?!&)/, 'a background &'],
+    [/(^|\s)!(\s|$)/, '! negation'],
+    [/[(){}]/, 'grouping', bare.replace(/\$\([^()]*\)|\$\{[^{}]*\}/g, '')],
+    [/(^|\s)sed\s+(-\w*\s+)*-i/, 'sed -i'],
+  ];
+  for (const [re, name, against = bare] of ops) if (re.test(against)) problems.push(name);
+  return problems;
+}
+
+test('shellProblems names what makes a command more than one plain command (D2)', () => {
+  const cases = [
+    ['slipway tag D2 --commit $(git rev-parse origin/main)', ['command substitution']],
+    ['git push -u origin ${BRANCH}', ['parameter expansion']],
+    ['slipway forge comments | grep reviewed', ['a pipe']],
+    ['cd x && slipway run check', ['&&']],
+    ['slipway run gate || true', ['||']],
+    ['git fetch; git merge origin/main', [';']],
+    ['echo done > out.txt', ['a redirect']],
+    ['! git diff --quiet', ['! negation']],
+    ['(cd x && git status)', ['&&', 'grouping']],
+    ["sed -i 's/a/b/' file", ['sed -i']],
+    ['until grep -q PASS log; do sleep 5; done', [';']],
+  ];
+  for (const [code, want] of cases) assert.deepEqual(shellProblems(code), want, code);
+  for (const code of [
+    'slipway lane --step <k>',
+    'git -C <main checkout> pull --ff-only',
+    'slipway init --forge <github|none> --check "<a && b>"',
+    'slipway forge pr-open --title "D<n> — <title>" --body-file <a file naming the plan\'s path and its CI: value>',
+    'node -p "process.platform+\' \'+process.arch"',
+    'slipway release bump <part>',
+    'fix(<scope>): D<n>.<k> review findings',
+    'RESULT: PASS | FAIL | BLOCKED',
+    '${CLAUDE_PLUGIN_ROOT}/templates/plan.md',
+    'git rev-parse origin/<default>',
+    '(with: <parent>)',
+    'slipway tag D2 --title "argument-hint: [D<n> | D<n>.<k>]"',
+  ])assert.deepEqual(shellProblems(code), [], code);
+  assert.deepEqual(shellProblems('slipway digest `date`', { fenced: true }), ['command substitution']);
+});
+
+test('skill, agent and template code spans are plain commands (D2)', () => {
+  const files = [
+    ...skillDirs().map((d) => `skills/${d}/SKILL.md`),
+    ...agentFiles().map((f) => `agents/${f}`),
+    'templates/plan.md',
+  ].filter((f) => existsSync(path.join(PLUGIN_ROOT, f)));
+  const failures = [];
+  for (const f of files) {
+    for (const { line, code, fenced } of codeSpans(readFileSync(path.join(PLUGIN_ROOT, f), 'utf8'))) {
+      const problems = shellProblems(code, { fenced });
+      if (problems.length) failures.push(`${f}:${line} \`${code}\` — ${problems.join(', ')}`);
+    }
+  }
+  assert.deepEqual(failures, [], `not one plain command per call:\n${failures.join('\n')}`);
+});
+
+test('each agent that runs commands says one plain command per Bash call, and writes with Write (D2)', () => {
+  for (const f of agentFiles()) {
+    const text = readFileSync(path.join(PLUGIN_ROOT, 'agents', f), 'utf8');
+    const tools = (frontmatter(text)?.tools ?? '').split(/,\s*/);
+    if (!tools.includes('Bash')) continue;
+    assert.match(text, /one plain command per Bash call/i,`agents/${f} runs commands but does not say one plain command per Bash call`);
+    if (tools.includes('Grep')) assert.match(text, /search with Grep/i, `agents/${f} does not say to search with Grep`);
+    else assert.doesNotMatch(text, /with Grep/i, `agents/${f} has no Grep tool but is told to use it`);
+    assert.match(text, /never sed -i/, `agents/${f} does not forbid sed -i`);
+    if (tools.includes('Write')) assert.match(text, /Write files with Write, change them with Edit/, `agents/${f} does not say to write with Write and change with Edit`);
+  }
+});
+
+test('the step builder has no Skill or Agent tool', () => {
+  const fm = frontmatter(readFileSync(path.join(PLUGIN_ROOT, 'agents', 'step-builder.md'), 'utf8'));
+  const tools = (fm?.tools ?? '').split(/,\s*/);
+  assert.ok(tools.includes('Read'), 'it reads its conventions skills with Read');
+  // Skill would bring Claude Code's skill listing into its load (§7); Agent would let it review its own diff (§4.4).
+  for (const tool of ['Skill', 'Agent', 'Task']) assert.ok(!tools.includes(tool), `agents/step-builder.md has the ${tool} tool`);
+});
+
 test('no skill, agent or template names a build tool or runs `sh -c` (§3.3, §11)', () => {
   const dirs = ['skills', 'agents', 'templates', 'hooks'].map((d) => path.join(PLUGIN_ROOT, d)).filter(existsSync);
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));

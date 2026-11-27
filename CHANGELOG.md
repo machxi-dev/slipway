@@ -2,6 +2,16 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
+## 0.2.1 — 2026-11-27
+
+### Fixed
+
+- Every command the skills, the agents and the plan template give is one plain command per Bash call, which the permission layer allows: `/slipway:ship` reads `git rev-parse origin/<default>` as its own call after a squash merge and passes the hash to `slipway tag`, instead of substituting it, each agent that runs commands is told to write with Write, change with Edit and search with Grep, and a done-when is a plain command or a test name. A test refuses substitution, expansion, pipes, `&&`, `||`, `;`, redirects, negation, grouping and in-place `sed` in their code spans.
+
+### Changed
+
+- The step builder has no Skill tool, so Claude Code's skill listing (about 21 KB on the D1 run) is no longer in its load: `slipway lane --step` prints each conventions skill's `.claude/skills/<name>/SKILL.md` path, or that it is not found there, and the builder reads each with Read and names a missing one in its report. A conventions skill kept only in a plugin or in user scope no longer reaches the builder. The gate-runner always runs in the foreground with the Bash tool's longest timeout and never polls; a run it cuts off is `BLOCKED: timed out`, and `/slipway:ship` then gives the operator `slipway run gate` to run and takes their result into the evidence comment (§4.4, §4.5, §7).
+
 ## 0.2.0 — 2026-11-27
 
 ### Added

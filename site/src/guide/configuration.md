@@ -94,7 +94,7 @@ Optional. An area is a part of the repository with its own conventions and its o
 | Key | Default | What it is |
 | --- | --- | --- |
 | `areas.<slug>.paths` | required | Globs for the area's files. |
-| `areas.<slug>.skills` | `[]` | The repository's conventions skills a step builder preloads when the step's paths reach the area. |
+| `areas.<slug>.skills` | `[]` | The repository's conventions skills a step builder reads, from `.claude/skills/<name>/SKILL.md`, when the step's paths reach the area; a skill kept elsewhere, in a plugin or in user scope, is reported not found. |
 
 ## A monorepo
 

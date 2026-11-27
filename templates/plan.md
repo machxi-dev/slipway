@@ -13,7 +13,7 @@
 
 ## Done when
 
-<!-- The definition of done, which /slipway:ship runs on the lane's head: commands and test names only. -->
+<!-- The definition of done, which /slipway:ship runs on the lane's head. Each item, here and in a step's done-when, is one plain command (no pipe, &&, ;, redirect or substitution) or a test name; a negative check, such as "no file says X", becomes a test. -->
 
 - [ ] `slipway run gate` is green.
 
