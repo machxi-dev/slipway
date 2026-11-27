@@ -5,7 +5,6 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { currentBranch } from './git.mjs';
-import { stateDir } from './proved.mjs';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
 const git = (cwd, args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -19,8 +18,11 @@ function gh(root, args) {
   return r.stdout.trim();
 }
 
-/** forge none keeps a branch's step comments in the worktree's git dir, one JSON string per line. */
-const localComments = (root, branch) => path.join(stateDir(root), 'comments', `${branch.replace(/[^\w.-]+/g, '-')}.jsonl`);
+/** forge none keeps a branch's step comments in the repository's common git dir, one JSON string per line. */
+export const localComments = (root, branch) => {
+  const common = path.resolve(root, git(root, ['rev-parse', '--git-common-dir']).stdout.trim());
+  return path.join(common, 'slipway', 'comments', `${branch.replace(/[^\w.-]+/g, '-')}.jsonl`);
+};
 
 /** The comments recorded for a branch; a line cut short by a crash is skipped. */
 function readLocalComments(file) {
@@ -90,6 +92,13 @@ export async function forge(root, config, verb, opts = {}) {
       if (!opts.title || !opts.bodyFile) throw usage('pr-open needs --title and --body-file');
       const open = JSON.parse(gh(root, ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1']) || '[]');
       if (open.length) return { code: 0, lines: [open[0].url] };
+      // A lane just opened has no commit of its own, and a forge refuses a pull request with nothing in it:
+      // the pull request waits for the first step, whose build opens it with the same verb.
+      git(root, ['fetch', '-q', 'origin', config.defaultBranch]);
+      const ahead = git(root, ['rev-list', '--count', `origin/${config.defaultBranch}..${branch}`]);
+      if (ahead.status === 0 && ahead.stdout.trim() === '0') {
+        return { code: 0, lines: [`no commits on ${branch} beyond ${config.defaultBranch} yet: the pull request opens with the first step`] };
+      }
       const url = gh(root, ['pr', 'create', '--draft', '--base', config.defaultBranch, '--head', branch, '--title', opts.title, '--body-file', opts.bodyFile]);
       return { code: 0, lines: [url.split('\n').at(-1)] };
     }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runState } from './forge.mjs';
@@ -53,7 +53,7 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   assert.equal(slipway(wt, ['forge', 'comments']).stdout, 'D1.1 reviewed: clean\nD1.2 reviewed: 2 findings, fixed in abc\n');
   assert.equal(slipway(repo, ['forge', 'comments']).stdout, '', 'per worktree');
   // A line cut short by a crash is skipped, not fatal.
-  const file = path.join(git(wt, 'rev-parse', '--absolute-git-dir'), 'slipway', 'comments', 'lane-D1.jsonl');
+  const file = path.join(path.resolve(wt, git(wt, 'rev-parse', '--git-common-dir')), 'slipway', 'comments', 'lane-D1.jsonl');
   writeFileSync(file, readFileSync(file, 'utf8') + '"D1.3 revi');
   assert.equal(slipway(wt, ['forge', 'comments']).stdout, 'D1.1 reviewed: clean\nD1.2 reviewed: 2 findings, fixed in abc\n');
   assert.match(slipway(wt, ['forge', 'run']).stdout, /^off: forge none runs no CI$/m);
@@ -68,12 +68,29 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   // Removed from inside the worktree, the lane's branch goes from origin too, forge or none.
   assert.equal(slipway(wt, ['worktree', 'remove', 'D1']).code, 0);
   assert.equal(git(origin, 'branch', '--list', 'lane/D1'), '');
+  assert.equal(existsSync(file), false, 'the lane’s local comments go with it');
 });
 
 test('forge github goes through gh: an open pull request is reused, and a run is read on the pushed head', (t) => {
   const { repo } = ready(t, 'github');
   git(repo, 'checkout', '-q', '-b', 'lane/D2');
   git(repo, 'push', '-q', '-u', 'origin', 'lane/D2');
+  const opened = path.join(path.dirname(repo), 'pr-open.log');
+  writeFileSync(path.join(repo, '..', 'body0.md'), 'body');
+  // A lane with no commit of its own gets no pull request yet: the forge would refuse an empty one.
+  const fake0 = path.join(path.dirname(repo), 'gh0.mjs');
+  writeFileSync(fake0, `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(opened)}, process.argv.slice(2).join(' ') + '\\n'); if (process.argv[3] === 'list') console.log('[]');\n`);
+  let r0 = slipway(repo, ['forge', 'pr-open', '--title', 't', '--body-file', '../body0.md'], { env: { SLIPWAY_GH: fake0 } });
+  assert.equal(r0.code, 0, r0.stderr);
+  assert.match(r0.stdout, /^no commits on lane\/D2 beyond main yet: the pull request opens with the first step$/m);
+  assert.doesNotMatch(readFileSync(opened, 'utf8'), /pr create/);
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'feat: D2.1 things');
+  git(repo, 'push', '-q', 'origin', 'lane/D2');
+  // --branch acts on a branch this checkout does not have checked out.
+  git(repo, 'checkout', '-q', 'main');
+  r0 = slipway(repo, ['forge', 'comments', '--branch', 'lane/D2'], { env: { SLIPWAY_GH: fake0 } });
+  assert.match(readFileSync(opened, 'utf8'), /^pr view lane\/D2 --json comments$/m, r0.stderr);
+  git(repo, 'checkout', '-q', 'lane/D2');
   const head = git(repo, 'rev-parse', 'HEAD');
   const log = path.join(path.dirname(repo), 'gh.log');
   const fake = path.join(path.dirname(repo), 'gh.mjs');

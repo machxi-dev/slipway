@@ -29,7 +29,10 @@ export function compareVersions(a, b) {
 
 /** The installed Claude Code's version, or null when `claude` cannot be run. */
 export function claudeVersion() {
-  const r = spawnSync('claude', ['--version'], { encoding: 'utf8', shell: process.platform === 'win32', timeout: 30_000 });
+  // On Windows `claude` is a .cmd shim, which only a shell runs; one command string, so Node passes no args to a shell (DEP0190).
+  const r = process.platform === 'win32'
+    ? spawnSync('claude --version', { encoding: 'utf8', shell: true, timeout: 30_000 })
+    : spawnSync('claude', ['--version'], { encoding: 'utf8', timeout: 30_000 });
   if (r.status !== 0) return null;
   return /(\d+\.\d+\.\d+)/.exec(r.stdout)?.[1] ?? null;
 }

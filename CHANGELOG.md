@@ -20,3 +20,10 @@ All notable changes to Slipway are recorded here. Versions follow [semver](https
 - The skill `/slipway:build`: a step-builder agent per step, the bounded review, findings back to the same builder, and a comment per step that a resumed run reads; `slipway forge comments`, with forge none keeping its comments in the worktree's git dir (§4.3, §4.4).
 - The skill `/slipway:ship`: the one stop on the decisions file, the ship commit, the gate and the lane's CI, the merge, the tag and the clean-up (§4.5, §4.6).
 - The skill `/slipway:plan`: planned rows and their roadmap entries from a goal, a review or a finding (§4.1, §4.7).
+
+### Fixed
+
+- A lane with no commit of its own gets its draft pull request from `/slipway:build`'s first step, not a refused one at scope; `slipway forge --branch` acts on a branch the checkout does not have checked out (§4.2, §4.3).
+- A digest checked out with CRLF line ends (Git for Windows' default) is not stale (§3.2).
+- `slipway worktree remove` finishes when Windows holds the emptied worktree folder open, and takes the lane's local comments with it (§4.5).
+- `slipway init` runs `claude --version` on Windows without Node's DEP0190 warning.

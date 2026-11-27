@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { git, slipway, tempRepo } from './testing.mjs';
 
@@ -64,6 +64,16 @@ test('a shipped lane’s worktree and branch are removed, from the main checkout
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(wt7), false);
   assert.equal(git(repo, 'branch', '--list', 'lane/D7'), '');
+  // Windows: git emptied and unregistered the worktree but a shell held the folder. The branch still goes,
+  // and a later run from the main checkout finishes the folder.
+  assert.equal(slipway(repo, ['worktree', 'D8']).code, 0);
+  const wt8 = path.join(path.dirname(repo), 'shop-D8');
+  git(repo, 'worktree', 'remove', wt8);
+  mkdirSync(wt8);
+  r = slipway(repo, ['worktree', 'remove', 'D8']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(existsSync(wt8), false);
+  assert.equal(git(repo, 'branch', '--list', 'lane/D8'), '');
 });
 
 test('a new lane branch starts from the default branch, not from the checkout it is made in', (t) => {

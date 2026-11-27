@@ -96,6 +96,9 @@ export function format(root, config, files) {
  * Write the digests (or, with check, compare them). Returns { written, stale, problems }. With problems,
  * nothing is written. The comparison is made after commands.format, as the committed files were.
  */
+/** Bytes as text with LF line ends: a Windows checkout (core.autocrlf) holds a digest with CRLF, and that is not stale. */
+const lf = (buf) => buf.toString('utf8').replace(/\r\n/g, '\n');
+
 export function digest(root, config, template, { check = false } = {}) {
   const { digests, problems } = renderDigests(root, config, template);
   if (problems.length) return { written: [], stale: [], problems };
@@ -105,7 +108,7 @@ export function digest(root, config, template, { check = false } = {}) {
     const abs = path.join(root, file);
     const had = existsSync(abs) ? readFileSync(abs) : null;
     if (!config.commands.format) {
-      if (had !== null && had.toString('utf8') === text) continue;
+      if (had !== null && lf(had) === text) continue;
       if (check) stale.push(file);
       else {
         mkdirSync(path.dirname(abs), { recursive: true });
@@ -128,7 +131,7 @@ export function digest(root, config, template, { check = false } = {}) {
       throw err;
     }
     if (check) restore();
-    if (had !== null && had.equals(formatted)) continue;
+    if (had !== null && lf(had) === lf(formatted)) continue;
     if (check) stale.push(file);
     else written.push(file);
   }

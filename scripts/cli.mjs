@@ -42,7 +42,8 @@ const USAGE = `usage: slipway <verb> [args]
   forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | comments | ready | merge
   forge run [--sha <sha>] [--wait] [--log]
                          the forge's pull request and CI run for this branch (github through gh; none locally);
-                         comments prints the first line of each comment (under none, the ones recorded locally)
+                         comments prints the first line of each comment (under none, the ones recorded locally);
+                         --branch <b> acts on another branch's, from a checkout where it is not checked out
   release bump patch|minor|major
                          bump the version in release.versionFile and release.also
   tag D<n> --head <sha> [--commit <sha>] [--pr <url>] [--title <t>]
@@ -235,9 +236,9 @@ const verbs = {
   async forge(args, { cwd, out }) {
     const { root, config } = setup(cwd);
     const [verb, ...more] = args;
-    const { opts } = options(more, { values: ['title', 'body-file', 'sha'], flags: ['wait', 'log'] });
+    const { opts } = options(more, { values: ['title', 'body-file', 'sha', 'branch'], flags: ['wait', 'log'] });
     const bodyFile = opts['body-file'] && path.resolve(cwd, opts['body-file']);
-    const r = await forge(root, config, verb, { title: opts.title, bodyFile, sha: opts.sha, wait: opts.wait, log: opts.log });
+    const r = await forge(root, config, verb, { title: opts.title, bodyFile, sha: opts.sha, wait: opts.wait, log: opts.log, branch: opts.branch });
     for (const l of r.lines) out(l);
     return r.code;
   },
