@@ -1,0 +1,15 @@
+{
+  "name": "slipway",
+  "owner": {
+    "name": "machxi-dev"
+  },
+  "description": "Slipway, a scope → build → ship workflow plugin for Claude Code. This repository is the plugin and its own marketplace.",
+  "plugins": [
+    {
+      "name": "slipway",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "A scope → build → ship workflow for Claude Code."
+    }
+  ]
+}
