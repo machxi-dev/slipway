@@ -17,13 +17,13 @@ function summarise(es, { sidechain }) {
   for (const e of es) if (e.type === 'assistant' && Boolean(e.isSidechain) === sidechain) calls.set(e.message.id, e.message.usage);
   const us = [...calls.values()];
   if (!us.length) return null;
-  const ctx = (u) => u.input_tokens + u.cache_creation_input_tokens + u.cache_read_input_tokens;
+  const ctx = (u) => (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
   const ts = es.map((e) => e.timestamp).filter(Boolean).sort();
   return {
     calls: us.length,
     firstContext: ctx(us[0]),
     peakContext: Math.max(...us.map(ctx)),
-    outputTokens: us.reduce((s, u) => s + u.output_tokens, 0),
+    outputTokens: us.reduce((s, u) => s + (u.output_tokens ?? 0), 0),
     wallSeconds: Math.round((Date.parse(ts.at(-1)) - Date.parse(ts[0])) / 1000),
   };
 }

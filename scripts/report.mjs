@@ -1,7 +1,7 @@
 // A step builder's fixed load: what it reads before it reads code, in bytes, by part (docs/design.md §7).
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { overlaps, stepBrief } from './lane.mjs';
+import { overlaps, pathGlobs, stepBrief } from './lane.mjs';
 import { linkedRecords } from './plan.mjs';
 
 /** v0.2's done-when (§9): a step's fixed load under 40 KB. */
@@ -24,7 +24,7 @@ export function rulePaths(text) {
   const i = lines.findIndex((l) => /^paths:\s*$/.test(l) || /^paths:\s*\S/.test(l));
   if (i < 0) return null;
   const inline = /^paths:\s*(\S.*)$/.exec(lines[i]);
-  if (inline) return inline[1].replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
+  if (inline) return splitFlow(inline[1].trim().replace(/^\[|\]$/g, '')).map(unquote).filter(Boolean);
   const globs = [];
   for (const l of lines.slice(i + 1)) {
     const m = /^\s+-\s*(.+)$/.exec(l);
@@ -34,6 +34,33 @@ export function rulePaths(text) {
   return globs;
 }
 const unquote = (s) => s.trim().replace(/^(["'])(.*)\1$/, '$2');
+
+/** A YAML flow list's items: commas inside quotes or a glob's braces (`src/{a,b}/**`) do not split. */
+function splitFlow(text) {
+  const items = [];
+  let item = '';
+  let quote = null;
+  let depth = 0;
+  for (const c of text) {
+    if (quote) quote = c === quote ? null : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === '{') depth++;
+    else if (c === '}') depth = Math.max(0, depth - 1);
+    else if (c === ',' && depth === 0) {
+      items.push(item);
+      item = '';
+      continue;
+    }
+    item += c;
+  }
+  return [...items, item];
+}
+
+/** True when abs is inside root (not on another drive, not above it). */
+function inside(root, abs) {
+  const rel = path.relative(root, abs);
+  return rel !== '' && !path.isAbsolute(rel) && rel.split(/[\\/]/)[0] !== '..';
+}
 
 /** The `@path` imports of a memory file, outside code spans and fences, as Claude Code resolves them. */
 export function imports(text) {
@@ -52,17 +79,28 @@ export function imports(text) {
  * Pushes { file, bytes } onto `files`; `seen` holds absolute paths already counted.
  */
 function withImports(root, abs, { files, seen, depth = 0 }) {
-  if (seen.has(abs) || !existsSync(abs) || !statSync(abs).isFile()) return;
+  if (seen.has(abs) || !isFile(abs)) return;
   seen.add(abs);
-  const text = readFileSync(abs, 'utf8');
+  // Frontmatter is settings, not context, in every memory file Claude Code reads.
+  const text = body(readFileSync(abs, 'utf8'));
   files.push({ file: posix(path.relative(root, abs)), bytes: Buffer.byteLength(text) });
   if (depth >= MAX_IMPORT_DEPTH) return;
   for (const imp of imports(text)) {
-    if (imp.startsWith('~')) continue; // a user's own file, not the repository's
-    const target = path.resolve(path.dirname(abs), imp);
-    if (posix(path.relative(root, target)).startsWith('..')) continue;
-    withImports(root, target, { files, seen, depth: depth + 1 });
+    const target = importTarget(root, abs, imp);
+    if (target) withImports(root, target, { files, seen, depth: depth + 1 });
   }
+}
+
+const isFile = (abs) => existsSync(abs) && statSync(abs).isFile();
+
+/** Where an import points, inside the repository; a sentence's closing punctuation is not part of the path. */
+function importTarget(root, from, imp) {
+  if (imp.startsWith('~')) return null; // a user's own file, not the repository's
+  for (const candidate of [imp, imp.replace(/[.,;:!?)]+$/, '')]) {
+    const target = path.resolve(path.dirname(from), candidate);
+    if (inside(root, target) && isFile(target)) return target;
+  }
+  return null;
 }
 
 /** Every rule file under .claude/rules, with its `paths:` globs (null: always loaded). */
@@ -81,11 +119,19 @@ function ruleFiles(root) {
   return found;
 }
 
-const stepGlobs = (paths = '') =>
-  paths
-    .split(/[,;]/)
-    .map((p) => p.replace(/`/g, '').trim())
-    .filter(Boolean);
+/** The folders below the root on the way to each glob's literal prefix: `src/api/**` → src, src/api. */
+function folders(globs) {
+  const out = [];
+  for (const g of globs) {
+    const parts = g.replaceAll('\\', '/').split(/[*?[{]/)[0].split('/');
+    parts.pop(); // the last segment is a file name, or empty after a trailing slash
+    for (let i = 1; i <= parts.length; i++) {
+      const dir = parts.slice(0, i).join('/');
+      if (dir && !out.includes(dir)) out.push(dir);
+    }
+  }
+  return out;
+}
 
 /** The SKILL.md of a conventions skill the repository keeps, or null (a plugin's or a user's skill). */
 function skillFile(root, name) {
@@ -114,7 +160,8 @@ export function fixedLoad(root, config, lane, k, pluginRoot) {
   // matching file. An area digest imported that way is always on (an inline one, as `slipway digest` writes, is not).
   for (const r of rules.filter((r) => r.paths !== null)) {
     for (const imp of imports(body(readFileSync(r.abs, 'utf8')))) {
-      if (!imp.startsWith('~')) withImports(root, path.resolve(path.dirname(r.abs), imp), { files: always, seen });
+      const target = importTarget(root, r.abs, imp);
+      if (target) withImports(root, target, { files: always, seen });
     }
   }
 
@@ -124,9 +171,13 @@ export function fixedLoad(root, config, lane, k, pluginRoot) {
 
   const step = [{ file: `slipway lane --step ${k}`, bytes: Buffer.byteLength(`${brief.text}\n`) }];
 
-  // Area rules: a rule whose `paths:` reach the step's paths loads when the builder reads a file there.
-  const globs = stepGlobs(brief.step.fields.Paths);
+  // Area rules: a rule whose `paths:` reach the step's paths loads when the builder reads a file there, and so
+  // does a CLAUDE.md in a folder on the way to them.
+  const globs = pathGlobs(brief.step.fields.Paths);
   const area = [];
+  for (const dir of folders(globs)) {
+    for (const f of ['CLAUDE.md', 'CLAUDE.local.md']) withImports(root, path.join(root, dir, f), { files: area, seen });
+  }
   for (const r of rules.filter((r) => r.paths !== null && r.paths.some((a) => globs.some((g) => overlaps(a, g))))) {
     if (seen.has(r.abs)) continue;
     seen.add(r.abs);

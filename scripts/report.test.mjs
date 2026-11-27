@@ -32,6 +32,7 @@ function lane(t) {
 test('the helpers read rule frontmatter, imports and bodies as Claude Code does', () => {
   assert.deepEqual(rulePaths('---\npaths:\n  - "src/**"\n  - \'lib/*.js\'\n---\n\nx'), ['src/**', 'lib/*.js']);
   assert.deepEqual(rulePaths('---\npaths: ["a/**", b/**]\n---\nx'), ['a/**', 'b/**']);
+  assert.deepEqual(rulePaths('---\npaths: ["src/{api,db}/**", "x,y.md"]\n---\nx'), ['src/{api,db}/**', 'x,y.md']);
   assert.equal(rulePaths('no frontmatter'), null);
   assert.equal(rulePaths('---\ndescription: x\n---\n'), null);
   assert.deepEqual(imports('See @a.md and @../b.md.\n`@not` this\n```\n@nor-this\n```\n@c/d.md'), ['a.md', '../b.md.', 'c/d.md']);
@@ -62,6 +63,14 @@ test('`slipway report` prints a step’s fixed load by part, and the area rules 
   assert.doesNotMatch(one, /slipway-api\.md/);
   assert.match(one, /^not fixed load: the records it names \(0003-money\.md\), the spec, the code$/m);
   assert.equal(slipway(repo, ['report', '--step', '1']).stdout, one);
+  // A CLAUDE.md on the way to the step's paths loads on the first read there; an import ending a sentence counts.
+  write(repo, 'src/CLAUDE.md', 'Source notes; see @notes.md.\n');
+  write(repo, 'src/notes.md', 'n\n');
+  write(repo, 'lib/CLAUDE.md', 'not on the way\n');
+  const two = slipway(repo, ['report', 'D4.2']).stdout;
+  assert.match(two, /^ +29  src\/CLAUDE\.md$/m);
+  assert.match(two, /^ +2  src\/notes\.md$/m);
+  assert.doesNotMatch(two, /lib\/CLAUDE\.md/);
 });
 
 test('an @ import in a path-scoped rule counts as always on, a missing skill is named, and --check gates 40 KB', (t) => {

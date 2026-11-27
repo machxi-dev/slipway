@@ -58,8 +58,10 @@ test('an area’s loader carries its digest inline, and an @ import loader is st
   const r = slipway(repo, ['digest']);
   assert.equal(r.code, 0, r.stderr);
   const loader = read(repo, '.claude/rules/slipway-api.md');
-  assert.equal(loader, `---\npaths:\n  - "api/**"\n  - "lib/api/**"\n---\n\n${read(repo, 'docs/rules/api.md')}`);
-  assert.match(loader, /\*\*Money\.\*\*/);
+  // The same digest, its links made relative to .claude/rules.
+  const digest = read(repo, 'docs/rules/api.md').replace('](../adr/0002-money.md)', '](../../docs/adr/0002-money.md)');
+  assert.equal(loader, `---\npaths:\n  - "api/**"\n  - "lib/api/**"\n---\n\n${digest}`);
+  assert.match(loader, /^- \*\*Money\.\*\* Store cents\. \(\[0002\]\(\.\.\/\.\.\/docs\/adr\/0002-money\.md\)\)$/m);
   // A loader as v0.1 wrote it, importing the digest, is refreshed by the next `slipway digest`.
   writeFileSync(path.join(repo, '.claude/rules/slipway-api.md'), '---\npaths:\n  - "api/**"\n---\n\n@../../docs/rules/api.md\n');
   const c = slipway(repo, ['digest', '--check']);
@@ -67,6 +69,14 @@ test('an area’s loader carries its digest inline, and an @ import loader is st
   assert.match(c.stdout, /^stale \.claude\/rules\/slipway-api\.md$/m);
   assert.equal(slipway(repo, ['digest']).code, 0);
   assert.equal(read(repo, '.claude/rules/slipway-api.md'), loader);
+  // A 0.1 budget file caps every rule file at 1 KB; docs-check says how to split it.
+  const budget = JSON.parse(read(repo, 'slipway.budget.json'));
+  delete budget['.claude/rules/slipway.md'];
+  delete budget['.claude/rules/slipway-*.md'];
+  writeFileSync(path.join(repo, 'slipway.budget.json'), JSON.stringify({ ...budget, '.claude/rules/*.md': 200 }));
+  const d = slipway(repo, ['docs-check']);
+  assert.equal(d.code, 1);
+  assert.match(d.stderr, /slipway-api\.md: \d+ bytes, over its ceiling of 200 in slipway\.budget\.json; an area loader holds its digest since 0\.2: give \.claude\/rules\/slipway-\*\.md its own entry/);
 });
 
 test('a rule citing a record out of force, or an unknown area, is refused and nothing is written', (t) => {

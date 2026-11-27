@@ -68,12 +68,16 @@ export function overlaps(a, b) {
   return pa.startsWith(pb) || pb.startsWith(pa);
 }
 
-/** The conventions skills the config names for the areas a step's paths reach (§4.4). */
-export function skillsFor(config, paths) {
-  const globs = paths
+/** A step's `Paths:` value as globs. */
+export const pathGlobs = (paths = '') =>
+  paths
     .split(/[,;]/)
     .map((p) => p.replace(/`/g, '').trim())
     .filter(Boolean);
+
+/** The conventions skills the config names for the areas a step's paths reach (§4.4). */
+export function skillsFor(config, paths) {
+  const globs = pathGlobs(paths);
   const skills = [];
   for (const area of Object.values(config.areas)) {
     if (area.paths.some((a) => globs.some((g) => overlaps(a, g)))) for (const s of area.skills) if (!skills.includes(s)) skills.push(s);
