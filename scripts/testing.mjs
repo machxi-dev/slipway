@@ -12,13 +12,15 @@ export const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 
 
 /** A fresh git repository with one commit on `main`, removed when the test ends. */
 export function tempRepo(t, name = 'repo') {
-  const parent = realpathSync(mkdtempSync(path.join(tmpdir(), 'slipway-')));
+  // .native expands Windows 8.3 names (RUNNER~1), so paths compare equal to what git reports.
+  const parent = realpathSync.native(mkdtempSync(path.join(tmpdir(), 'slipway-')));
   t.after(() => rmSync(parent, { recursive: true, force: true }));
   const repo = path.join(parent, name);
   execFileSync('git', ['init', '-q', '-b', 'main', repo]);
   git(repo, 'config', 'user.email', 'test@example.invalid');
   git(repo, 'config', 'user.name', 'Slipway test');
   git(repo, 'config', 'commit.gpgsign', 'false');
+  git(repo, 'config', 'core.autocrlf', 'false');
   git(repo, 'commit', '-q', '--allow-empty', '-m', 'root');
   return repo;
 }
