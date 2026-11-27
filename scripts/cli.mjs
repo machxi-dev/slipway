@@ -6,7 +6,7 @@ import { repoRoot } from './git.mjs';
 import { runCommand } from './run.mjs';
 import { init, parseInitArgs } from './init.mjs';
 import { acceptRecord, newRecord } from './records.mjs';
-import { addRow, findLane, nextDeliverable, overlapWarnings, parseLaneArg, setStatus, shipRow, skillsFor } from './lane.mjs';
+import { addRow, findLane, generateLedger, nextDeliverable, overlapWarnings, parseLaneArg, setStatus, shipRow, skillsFor } from './lane.mjs';
 import { stepText } from './plan.mjs';
 import { digest } from './digest.mjs';
 import { docsCheck } from './docs-check.mjs';
@@ -35,6 +35,9 @@ const USAGE = `usage: slipway <verb> [args]
                          --overlap warns of open lanes naming the same records
   ledger next | add <title> [--scope <line>] | set D<n> "planned"|"in progress" | ship D<n> [--pr <url>]
                          the ledger's rows: the next number, a planned row, a status, a shipped row
+  ledger generate [--check]
+                         write the ledger's table from the plans' headers and the roadmap's planned
+                         entries (or say it is stale); a merge conflict in the table is resolved by this
   digest [--check]       write the digests from the accepted records' rules (or say which are stale)
   docs-check             the ledger, plans, decisions, records, digests, specs and byte budgets
   worktree [D<n>]        make the lane's worktree, copy lane.copy into it and run lane.setup
@@ -169,9 +172,19 @@ const verbs = {
     out(`steps: ${built} of ${lane.plan.steps.length} built${next ? `; next: ${next.k}. ${next.title}` : ''}`);
     return 0;
   },
-  async ledger(args, { cwd, out }) {
+  async ledger(args, { cwd, out, err }) {
     const { root, config } = setup(cwd);
     const [sub, ...more] = args;
+    if (sub === 'generate') {
+      const { opts, rest } = options(more, { flags: ['check'] });
+      if (rest.length) throw new UsageError('ledger generate takes only --check');
+      const r = generateLedger(root, config, { check: opts.check });
+      for (const p of r.problems) err(p);
+      if (r.problems.length) return 1;
+      if (r.stale) out(`stale ${config.docs.plans}/README.md`);
+      for (const f of r.written) out(`wrote ${f}`);
+      return r.stale ? 1 : 0;
+    }
     if (sub === 'next' && !more.length) {
       out(`D${nextDeliverable(root, config)}`);
       return 0;
@@ -192,7 +205,7 @@ const verbs = {
       for (const f of shipRow(root, config, parseLaneArg(rest[0]).n, { pr: opts.pr, date: opts.date })) out(`wrote ${f}`);
       return 0;
     }
-    throw new UsageError('usage: slipway ledger next | add <title> [--scope <line>] | set D<n> <status> | ship D<n> [--pr <url>]');
+    throw new UsageError('usage: slipway ledger next | add <title> [--scope <line>] | set D<n> <status> | ship D<n> [--pr <url>] | generate [--check]');
   },
   async digest(args, { cwd, pluginRoot, out, err }) {
     const { root, config } = setup(cwd);

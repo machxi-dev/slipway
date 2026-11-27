@@ -8,7 +8,8 @@ import { CONFIG_FILE, loadConfig, normalize } from './config.mjs';
 import { currentBranch } from './git.mjs';
 import { format, renderDigests } from './digest.mjs';
 import { isGlob } from './glob.mjs';
-import { LEDGER_HEADER, SHIPPED_HEADER, rowLine, shippedLine, splitLegacy, withRows } from './ledger.mjs';
+import { SHIPPED_HEADER, hasTable, ledgerRows, renderLedger, roadmapEntries, shippedLine, splitLegacy, withRows } from './ledger.mjs';
+import { addEntry, planSources } from './lane.mjs';
 import { INDEX_HEADER, listRecords, newRecord, today, upsertIndexRow } from './records.mjs';
 
 export const BUDGET_FILE = 'slipway.budget.json';
@@ -111,7 +112,7 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     : `Tags: \`${config.tagPrefix}-D<n>\`, one per shipped deliverable.`;
   const ledgerFile = path.join(abs(docs.plans), 'README.md');
   const ledger = render(template('ledger.md'), { tags });
-  const legacy = existsSync(ledgerFile) && !readFileSync(ledgerFile, 'utf8').split(/\r?\n/).some((l) => l.trim() === LEDGER_HEADER);
+  const legacy = existsSync(ledgerFile) && !hasTable(readFileSync(ledgerFile, 'utf8'));
   const roadmapFile = path.join(abs(docs.plans), 'ROADMAP.md');
   const shippedFile = path.join(abs(docs.plans), 'SHIPPED.md');
   if (legacy && !options.brownfield) {
@@ -120,12 +121,31 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     warnings.push(`${rel(ledgerFile)} is a ledger in another shape, but ROADMAP.md or SHIPPED.md already exists beside it; split it by hand`);
   } else if (legacy) {
     // §13.5 step 5: open rows to the ledger, shipped rows to SHIPPED.md, everything else to ROADMAP.md whole.
+    // The ledger's table is generated (§4.7): an open row whose plan does not say it is open becomes a planned
+    // entry in the roadmap, its source from here on.
     const split = splitLegacy(readFileSync(ledgerFile, 'utf8'));
-    writeFileSync(ledgerFile, withRows(ledger, LEDGER_HEADER, split.open, rowLine));
+    const plans = planSources(abs(docs.plans));
+    let roadmap = template('roadmap.md');
+    for (const r of split.open) {
+      const plan = plans.find((p) => p.n === r.n);
+      if (plan?.status === 'planned' || plan?.status === 'in progress') {
+        if (plan.status !== r.status) warnings.push(`D${r.n}: the old ledger said ${r.status}, its plan says ${plan.status}; the plan's Status decides`);
+        continue;
+      }
+      if (plan?.status === 'shipped') {
+        const date = /\d{4}-\d{2}-\d{2}/.exec(plan.statusText)?.[0] ?? '';
+        split.shipped.push({ ...r, link: plan.file, date });
+        warnings.push(`D${r.n}: the old ledger said ${r.status}, but its plan says shipped; it goes to SHIPPED.md`);
+        continue;
+      }
+      roadmap = addEntry(roadmap, `### D${r.n} — ${r.title}\n${r.link ? `\nThe previous ledger linked it to [${r.link}](${r.link}).\n` : ''}`);
+      if (r.status === 'in progress') warnings.push(`D${r.n} was in progress, but ${plan ? 'its plan has no Status line Slipway reads' : 'has no plan'}; it is planned until its plan says "- Status: in progress"`);
+    }
+    const open = ledgerRows(plans, roadmapEntries(roadmap), split.shipped.map((r) => r.n));
+    writeFileSync(ledgerFile, renderLedger(ledger, open));
     writeFileSync(shippedFile, withRows(template('shipped.md'), SHIPPED_HEADER, split.shipped, shippedLine));
-    const roadmap = template('roadmap.md');
     writeFileSync(roadmapFile, split.rest ? `${roadmap.trimEnd()}\n\n## From the previous ledger\n\n${split.rest}\n` : roadmap);
-    actions.push({ action: 'split', path: rel(ledgerFile), note: `${split.open.length} open rows kept, ${split.shipped.length} to SHIPPED.md, the rest to ROADMAP.md` });
+    actions.push({ action: 'split', path: rel(ledgerFile), note: `${open.length} open rows kept, ${split.shipped.length} to SHIPPED.md, the rest to ROADMAP.md` });
     actions.push({ action: 'wrote', path: rel(shippedFile) }, { action: 'wrote', path: rel(roadmapFile) });
     if (split.unread.length) warnings.push(`kept as planned, status not read: ${split.unread.join(', ')}`);
   }

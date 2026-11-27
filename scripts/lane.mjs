@@ -4,7 +4,8 @@ import path from 'node:path';
 import { laneBranch, laneFromBranch, laneWorktree } from './config.mjs';
 import { currentBranch, mainRoot } from './git.mjs';
 import { matches } from './glob.mjs';
-import { LEDGER_HEADER, SHIPPED_HEADER, readRows, removeRow, rowLine, setRow, shippedLine } from './ledger.mjs';
+import { format } from './digest.mjs';
+import { LEDGER_HEADER, SHIPPED_HEADER, conflictsOutside, ledgerRows, readRows, renderLedger, roadmapEntries, rowLine, sameRows, setRow, shippedLine } from './ledger.mjs';
 import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord } from './plan.mjs';
 import { today } from './records.mjs';
 
@@ -117,47 +118,132 @@ export function nextDeliverable(root, config) {
   return Math.max(0, ...nums) + 1;
 }
 
-/** Add a planned row and its roadmap entry. Returns n. */
-export function addRow(root, config, title, scope) {
+const rel = (root, p) => posix(path.relative(root, p));
+
+/**
+ * The ledger as its sources make it (§4.7): the plans' headers and the roadmap's planned entries. `edits` stands
+ * in for files about to be written — `status` ({ [n]: status } for plans), `roadmap` and `shipped` texts.
+ * Returns { text, rows, current, problems }; text is null when the table already holds the rows.
+ */
+export function generatedLedger(root, config, { status = {}, roadmap, shipped } = {}) {
   const f = ledgerFiles(root, config);
-  const n = nextDeliverable(root, config);
-  writeFileSync(f.readme, setRow(readFileSync(f.readme, 'utf8'), { n, title, status: 'planned', link: null }));
-  const entry = `### D${n} — ${title}\n\n${scope ? `${scope}\n` : ''}`;
-  let roadmap = readIf(f.roadmap) || '# Roadmap\n';
-  const planned = roadmap.indexOf('\n## Planned');
+  const current = readFileSync(f.readme, 'utf8');
+  const plans = planSources(f.dir).map((p) => ({ ...p, status: status[p.n] ?? p.status }));
+  const shippedRows = readRows(shipped ?? readIf(f.shipped), SHIPPED_HEADER).map((r) => r.n);
+  const rows = ledgerRows(plans, roadmapEntries(roadmap ?? readIf(f.roadmap)), shippedRows);
+  const where = `${config.docs.plans}/README.md`;
+  // A row with no source is refused, not dropped: it would be the only place its title is written.
+  const kept = new Set([...rows.map((r) => r.n), ...shippedRows]);
+  const problems = readRows(current)
+    .filter((r) => !kept.has(r.n))
+    .map((r) => {
+      const plan = plans.find((p) => p.n === r.n);
+      const why = plan ? `its plan's Status is "${plan.status}", not planned or in progress,` : 'has no plan';
+      return `${where}:${r.line + 1}: D${r.n} ${why} and no "### D${r.n} — <title>" entry under "## Planned" in ROADMAP.md; add one, or remove the row`;
+    });
+  for (const line of conflictsOutside(current)) problems.push(`${where}:${line}: a merge conflict outside the table's rows; resolve it by hand, then run slipway ledger generate`);
+  return { text: sameRows(current, rows) ? null : renderLedger(current, rows), rows, current, problems };
+}
+
+/** Write the generated ledger, through commands.format. Returns the paths written. */
+function writeLedger(root, config, gen) {
+  if (gen.problems.length) throw usage(gen.problems.join('\n'));
+  if (gen.text === null) return [];
+  const file = ledgerFiles(root, config).readme;
+  writeFileSync(file, gen.text);
+  try {
+    format(root, config, [rel(root, file)]);
+  } catch (err) {
+    writeFileSync(file, gen.current);
+    throw err;
+  }
+  return [rel(root, file)];
+}
+
+/** `slipway ledger generate [--check]`: write the table from the plans' headers, or say it is stale. */
+export function generateLedger(root, config, { check = false } = {}) {
+  const gen = generatedLedger(root, config);
+  if (check || gen.problems.length) return { written: [], stale: gen.text !== null, problems: gen.problems };
+  return { written: writeLedger(root, config, gen), stale: false, problems: [] };
+}
+
+/** The roadmap with an entry added after the `## Planned` heading's entries. */
+export function addEntry(text, entry) {
+  const crlf = /\r\n/.test(text ?? '');
+  let roadmap = (text || '# Roadmap\n').replace(/\r\n/g, '\n');
+  // The heading roadmapEntries reads, exactly: "## Planned work" is another section.
+  const planned = /^##\s+Planned\s*$/m.exec(roadmap)?.index ?? -1;
   if (planned >= 0) {
-    // After the Planned heading's entries: before the next "## " heading, or at the end.
+    // Before the next "## " heading, or at the end.
     const next = roadmap.indexOf('\n## ', planned + 1);
     const at = next >= 0 ? next + 1 : roadmap.length;
     roadmap = `${roadmap.slice(0, at).trimEnd()}\n\n${entry}${next >= 0 ? `\n${roadmap.slice(at)}` : ''}`;
   } else roadmap = `${roadmap.trimEnd()}\n\n## Planned\n\n${entry}`;
-  writeFileSync(f.roadmap, roadmap.replace(/\n*$/, '\n'));
+  roadmap = roadmap.replace(/\n*$/, '\n');
+  return crlf ? roadmap.replace(/\n/g, '\r\n') : roadmap;
+}
+
+/** The roadmap without D<n>'s entry: the one under `## Planned` when it has one, else the first anywhere. */
+export function removeEntry(text, n) {
+  const entry = new RegExp(`^### D${n}\\b[^\\n]*\\n[\\s\\S]*?(?=^##|(?![\\s\\S]))`, 'm');
+  const start = /^##\s+Planned\s*$/m.exec(text);
+  if (start) {
+    const next = text.slice(start.index + start[0].length).search(/^## /m);
+    const end = next < 0 ? text.length : start.index + start[0].length + next;
+    const section = text.slice(start.index, end);
+    if (entry.test(section)) return text.slice(0, start.index) + section.replace(entry, '') + text.slice(end);
+  }
+  return entry.test(text) ? text.replace(entry, '') : null;
+}
+
+/** The plans as the ledger reads them: [{ n, file, title, status }]. */
+export const planSources = (dir) => listPlans(dir).map(({ n, file, plan }) => ({ n, file, title: plan.title, status: statusWord(plan.header.Status), statusText: plan.header.Status ?? '' }));
+
+/** Add a planned row: its roadmap entry, and the table regenerated. Returns n. */
+export function addRow(root, config, title, scope) {
+  const f = ledgerFiles(root, config);
+  const n = nextDeliverable(root, config);
+  const roadmap = addEntry(readIf(f.roadmap), `### D${n} — ${title}\n\n${scope ? `${scope}\n` : ''}`);
+  const gen = generatedLedger(root, config, { roadmap });
+  if (gen.problems.length) throw usage(gen.problems.join('\n'));
+  if (!gen.rows.some((r) => r.n === n)) throw new Error(`D${n}'s roadmap entry would not make a row; ROADMAP.md needs a "## Planned" heading`);
+  // The table first: it alone goes through the formatter, and it is put back when that fails.
+  writeLedger(root, config, gen);
+  writeFileSync(f.roadmap, roadmap);
   return n;
 }
 
-/** Set a row's status, linking its plan when the plan exists, and the plan header's Status to match. */
+/** A row as its sources make it, or a usage error naming where it would come from. */
+function sourceRow(root, config, n) {
+  const row = generatedLedger(root, config).rows.find((r) => r.n === n);
+  if (!row) throw usage(`no row D${n}: no open plan ${config.docs.plans}/${planName(n)} and no "### D${n} — <title>" entry under "## Planned" in ROADMAP.md`);
+  return row;
+}
+
+/** Set a plan header's Status, and regenerate the table. Returns the paths written. */
 export function setStatus(root, config, n, status) {
   if (!['planned', 'in progress'].includes(status)) throw usage('a ledger row is "planned" or "in progress"; /slipway:ship moves it to SHIPPED.md');
   const f = ledgerFiles(root, config);
-  const text = readFileSync(f.readme, 'utf8');
-  const row = readRows(text).find((r) => r.n === n);
-  if (!row) throw usage(`no row D${n} in ${config.docs.plans}/README.md`);
+  sourceRow(root, config, n);
   const planFile = path.join(f.dir, planName(n));
-  const link = existsSync(planFile) ? planName(n) : row.link;
+  if (!existsSync(planFile) && status !== 'planned') throw usage(`D${n} has no plan yet; /slipway:scope writes ${config.docs.plans}/${planName(n)} first`);
   // Every new text is made before any file is written, so a failure leaves both as they were.
-  const ledger = setRow(text, { n, title: row.title, status, link });
-  const plan = existsSync(planFile) ? setHeader(readFileSync(planFile, 'utf8'), 'Status', status) : null;
-  writeFileSync(f.readme, ledger);
-  if (plan !== null) writeFileSync(planFile, plan);
-  return [f.readme, ...(plan !== null ? [planFile] : [])].map((p) => path.relative(root, p).split(path.sep).join('/'));
+  const old = existsSync(planFile) ? readFileSync(planFile, 'utf8') : null;
+  const plan = old !== null ? setHeader(old, 'Status', status) : null;
+  const gen = generatedLedger(root, config, { status: { [n]: status } });
+  if (gen.problems.length) throw usage(gen.problems.join('\n'));
+  const written = writeLedger(root, config, gen);
+  if (plan !== null && plan !== old) {
+    writeFileSync(planFile, plan);
+    written.push(rel(root, planFile));
+  }
+  return written;
 }
 
-/** Move a row to SHIPPED.md with its date and pull request, and mark the plan shipped (§4.5 step 4). */
+/** Move a row to SHIPPED.md with its date and pull request, mark the plan shipped, regenerate (§4.5 step 4). */
 export function shipRow(root, config, n, { pr = '', date = today() } = {}) {
   const f = ledgerFiles(root, config);
-  const text = readFileSync(f.readme, 'utf8');
-  const row = readRows(text).find((r) => r.n === n);
-  if (!row) throw usage(`no row D${n} in ${config.docs.plans}/README.md`);
+  const row = sourceRow(root, config, n);
   if (!existsSync(f.shipped)) throw usage(`${config.docs.plans}/SHIPPED.md is missing; run slipway init`);
   // Every new text is made before any file is written, so a failure never loses the row.
   const shipped = setRow(readFileSync(f.shipped, 'utf8'), { n, title: row.title, date, pr, link: row.link }, SHIPPED_HEADER, shippedLine);
@@ -165,13 +251,16 @@ export function shipRow(root, config, n, { pr = '', date = today() } = {}) {
   const plan = existsSync(planFile) ? setHeader(readFileSync(planFile, 'utf8'), 'Status', `shipped ${date}`) : null;
   // The row's roadmap entry is done with: SHIPPED.md and the plan carry it from here (§4.7).
   const oldRoadmap = readIf(f.roadmap);
-  const entry = new RegExp(`^### D${n}\\b[^\\n]*\\n[\\s\\S]*?(?=^##|(?![\\s\\S]))`, 'm');
-  const roadmap = entry.test(oldRoadmap) ? oldRoadmap.replace(entry, '') : null;
+  const roadmap = removeEntry(oldRoadmap, n);
+  const gen = generatedLedger(root, config, { status: { [n]: 'shipped' }, roadmap: roadmap ?? oldRoadmap, shipped });
+  if (gen.problems.length) throw usage(gen.problems.join('\n'));
+  // The table first: it alone goes through the formatter, and it is put back when that fails.
+  const ledger = writeLedger(root, config, gen);
   writeFileSync(f.shipped, shipped);
-  writeFileSync(f.readme, removeRow(text, n));
+  const written = [rel(root, f.shipped), ...ledger];
   if (plan !== null) writeFileSync(planFile, plan);
   if (roadmap !== null) writeFileSync(f.roadmap, roadmap);
-  return [f.shipped, f.readme, ...(plan !== null ? [planFile] : []), ...(roadmap !== null ? [f.roadmap] : [])].map((p) => path.relative(root, p).split(path.sep).join('/'));
+  return [...written, ...(plan !== null ? [rel(root, planFile)] : []), ...(roadmap !== null ? [rel(root, f.roadmap)] : [])];
 }
 
 export { LEDGER_HEADER, rowLine };
