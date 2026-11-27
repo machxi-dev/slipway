@@ -44,6 +44,7 @@ export function findLane(root, config, arg) {
   return {
     n,
     k,
+    root,
     plan,
     planFile: posix(path.relative(root, planFile)),
     decisionsFile: posix(path.relative(root, decisionsFile)),
@@ -85,21 +86,30 @@ export function skillsFor(config, paths) {
   return skills;
 }
 
+/** The SKILL.md of a conventions skill the repository keeps, relative to root, or null (a plugin's or a user's skill). */
+export function skillFile(root, name) {
+  const file = `.claude/skills/${name}/SKILL.md`;
+  return existsSync(path.join(root, file)) ? file : null;
+}
+
 /**
  * What `slipway lane --step <k>` prints for the builder (§4.4): the plan's header and the step's section, the lane
- * branch, the decisions file and the conventions skills. Returns { text, step, skills }, or null with no such step.
+ * branch, the decisions file, and each conventions skill with its SKILL.md path, which the builder reads, or that
+ * the repository does not keep it, from the checkout the lane was found in. Returns
+ * { text, step, skills: [{ name, file | null }] }, or null with no such step.
  */
 export function stepBrief(config, lane, k) {
   const text = stepText(lane.plan, k);
   if (!text) return null;
   const step = lane.plan.steps.find((s) => s.k === k);
-  const skills = skillsFor(config, step.fields.Paths ?? '');
+  const skills = skillsFor(config, step.fields.Paths ?? '').map((name) => ({ name, file: skillFile(lane.root, name) }));
   const lines = [
     text,
     '',
     `Lane branch: ${lane.branch}${lane.current === lane.branch ? '' : ` (checked out: ${lane.current ?? 'detached'})`}`,
     `Decisions file: ${lane.decisionsFile}`,
-    `Conventions skills: ${skills.length ? skills.join(', ') : 'none'}`,
+    `Conventions skills:${skills.length ? '' : ' none'}`,
+    ...skills.map((s) => `- ${s.name}: ${s.file ?? 'not found in .claude/skills'}`),
   ];
   return { text: lines.join('\n'), step, skills };
 }

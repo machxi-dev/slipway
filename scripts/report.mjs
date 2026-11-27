@@ -133,12 +133,6 @@ function folders(globs) {
   return out;
 }
 
-/** The SKILL.md of a conventions skill the repository keeps, or null (a plugin's or a user's skill). */
-function skillFile(root, name) {
-  const f = path.join(root, '.claude', 'skills', name, 'SKILL.md');
-  return existsSync(f) ? f : null;
-}
-
 /**
  * The fixed load of step `k` of a lane (§7): the always-on memory files and the rules they import, the
  * step-builder's body, what `slipway lane --step` prints, the rules of the areas its paths reach, and its
@@ -186,10 +180,10 @@ export function fixedLoad(root, config, lane, k, pluginRoot) {
 
   const conventions = [];
   const missing = [];
+  // The same files the brief points the builder to, which it reads with Read.
   for (const s of brief.skills) {
-    const f = skillFile(root, s);
-    if (f) conventions.push({ file: posix(path.relative(root, f)), bytes: Buffer.byteLength(body(readFileSync(f, 'utf8'))) });
-    else missing.push(s);
+    if (s.file) conventions.push({ file: s.file, bytes: Buffer.byteLength(body(readFileSync(path.join(root, s.file), 'utf8'))) });
+    else missing.push(s.name);
   }
 
   const parts = [part('always on', always), part('procedure', procedure), part('the step', step), part('area rules', area), part('conventions', conventions)];

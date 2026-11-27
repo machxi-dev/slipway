@@ -184,6 +184,14 @@ test('each agent that runs commands says one plain command per Bash call, and wr
   }
 });
 
+test('the step builder has no Skill or Agent tool', () => {
+  const fm = frontmatter(readFileSync(path.join(PLUGIN_ROOT, 'agents', 'step-builder.md'), 'utf8'));
+  const tools = (fm?.tools ?? '').split(/,\s*/);
+  assert.ok(tools.includes('Read'), 'it reads its conventions skills with Read');
+  // Skill would bring Claude Code's skill listing into its load (§7); Agent would let it review its own diff (§4.4).
+  for (const tool of ['Skill', 'Agent', 'Task']) assert.ok(!tools.includes(tool), `agents/step-builder.md has the ${tool} tool`);
+});
+
 test('no skill, agent or template names a build tool or runs `sh -c` (§3.3, §11)', () => {
   const dirs = ['skills', 'agents', 'templates', 'hooks'].map((d) => path.join(PLUGIN_ROOT, d)).filter(existsSync);
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]));

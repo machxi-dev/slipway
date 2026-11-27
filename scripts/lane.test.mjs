@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { addEntry, findLane, overlapWarnings, overlaps, removeEntry, skillsFor } from './lane.mjs';
@@ -42,18 +42,21 @@ test('the lane comes from the branch, else from a plan whose Branch line names i
   assert.throws(() => findLane(repo, config, 'four'), /not a deliverable/);
 });
 
-test('`slipway lane --step` prints the header, the step and its conventions skills', (t) => {
+test('the step brief prints each conventions skill\'s SKILL.md path, or that it is not found', (t) => {
   const repo = ready(t);
   const cfg = JSON.parse(read(repo, 'slipway.config.json'));
-  cfg.areas = { api: { paths: ['src/api/**'], skills: ['api-conventions'] } };
+  cfg.areas = { api: { paths: ['src/api/**'], skills: ['api-conventions', 'plugin:elsewhere'] } };
   writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(cfg));
   writeFileSync(path.join(repo, 'docs/plan/D4.md'), PLAN);
+  mkdirSync(path.join(repo, '.claude/skills/api-conventions'), { recursive: true });
+  writeFileSync(path.join(repo, '.claude/skills/api-conventions/SKILL.md'), '---\nname: api-conventions\n---\n\nHandlers are thin.\n');
   git(repo, 'checkout', '-q', '-b', 'lane/D4');
   let r = slipway(repo, ['lane', '--step', 'next']);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /### 2\. The refund endpoint/);
-  assert.match(r.stdout, /^Conventions skills: api-conventions$/m);
+  assert.match(r.stdout, /^Conventions skills:\n- api-conventions: \.claude\/skills\/api-conventions\/SKILL\.md\n- plugin:elsewhere: not found in \.claude\/skills$/m);
   assert.match(r.stdout, /^Decisions file: docs\/plan\/D4\.decisions\.md$/m);
+  assert.match(slipway(repo, ['lane', '--step', '1']).stdout, /^Conventions skills: none$/m, 'a step that reaches no area');
   r = slipway(repo, ['lane']);
   assert.match(r.stdout, /^steps: 1 of 2 built; next: 2\. The refund endpoint$/m);
   assert.match(r.stdout, /^status: in progress; CI: at-ship$/m);
