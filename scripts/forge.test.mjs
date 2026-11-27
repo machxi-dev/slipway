@@ -49,6 +49,10 @@ test('forge none: no pull request or CI, and the merge is a local --no-ff merge 
   assert.equal(slipway(wt, ['forge', 'comment', '--body-file', '../c2.md']).code, 0);
   assert.equal(slipway(wt, ['forge', 'comments']).stdout, 'D1.1 reviewed: clean\nD1.2 reviewed: 2 findings, fixed in abc\n');
   assert.equal(slipway(repo, ['forge', 'comments']).stdout, '', 'per worktree');
+  // A line cut short by a crash is skipped, not fatal.
+  const file = path.join(git(wt, 'rev-parse', '--absolute-git-dir'), 'slipway', 'comments', 'lane-D1.jsonl');
+  writeFileSync(file, readFileSync(file, 'utf8') + '"D1.3 revi');
+  assert.equal(slipway(wt, ['forge', 'comments']).stdout, 'D1.1 reviewed: clean\nD1.2 reviewed: 2 findings, fixed in abc\n');
   assert.match(slipway(wt, ['forge', 'run']).stdout, /^off: forge none runs no CI$/m);
   const r = slipway(wt, ['forge', 'merge']);
   assert.equal(r.code, 0, r.stderr);

@@ -19,8 +19,22 @@ function gh(root, args) {
   return r.stdout.trim();
 }
 
-/** forge none keeps a lane's step comments in the worktree's git dir, one JSON string per line. */
-const localComments = (root) => path.join(stateDir(root), 'comments.jsonl');
+/** forge none keeps a branch's step comments in the worktree's git dir, one JSON string per line. */
+const localComments = (root, branch) => path.join(stateDir(root), 'comments', `${branch.replace(/[^\w.-]+/g, '-')}.jsonl`);
+
+/** The comments recorded for a branch; a line cut short by a crash is skipped. */
+function readLocalComments(file) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .flatMap((l) => {
+      try {
+        return l ? [JSON.parse(l)] : [];
+      } catch {
+        return [];
+      }
+    });
+}
 
 const hasOrigin = (root) => git(root, ['remote', 'get-url', 'origin']).status === 0;
 
@@ -87,7 +101,7 @@ export async function forge(root, config, verb, opts = {}) {
     case 'comment': {
       if (!opts.bodyFile) throw usage('comment needs --body-file');
       if (none) {
-        const file = localComments(root);
+        const file = localComments(root, branch);
         mkdirSync(path.dirname(file), { recursive: true });
         appendFileSync(file, JSON.stringify(readFileSync(opts.bodyFile, 'utf8')) + '\n');
         return { code: 0, lines: [`forge none: recorded in ${file}`] };
@@ -97,8 +111,7 @@ export async function forge(root, config, verb, opts = {}) {
     case 'comments': {
       let bodies;
       if (none) {
-        const file = localComments(root);
-        bodies = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+        bodies = readLocalComments(localComments(root, branch));
       } else {
         bodies = JSON.parse(gh(root, ['pr', 'view', branch, '--json', 'comments'])).comments.map((c) => c.body);
       }
