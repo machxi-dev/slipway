@@ -41,6 +41,10 @@ test('`slipway digest` writes one digest per area from accepted records only, ci
   assert.doesNotMatch(read(repo, 'docs/rules/general.md'), /Draft|Money/);
   assert.match(read(repo, 'docs/rules/general.md'), /\*\*Commands\.\*\*/, 'the process record’s rules');
   assert.equal(slipway(repo, ['digest', '--check']).code, 0);
+  // A Windows checkout with core.autocrlf holds the digest with CRLF line ends: that is not stale.
+  writeFileSync(path.join(repo, 'docs/rules/web.md'), read(repo, 'docs/rules/web.md').replace(/\n/g, '\r\n'));
+  assert.equal(slipway(repo, ['digest', '--check']).code, 0, 'CRLF is not stale');
+  assert.equal(slipway(repo, ['docs-check']).code, 0, slipway(repo, ['docs-check']).stderr);
   writeFileSync(path.join(repo, 'docs/rules/api.md'), 'edited by hand\n');
   const c = slipway(repo, ['digest', '--check']);
   assert.equal(c.code, 1);
