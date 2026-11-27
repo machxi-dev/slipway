@@ -58,7 +58,7 @@ A plugin is the one Claude Code mechanism that gives commands a namespace (`/<pl
 
 ### 3.3 The line between plugin and repository
 
-The plugin owns what is the same in every repository — the ledger, plans, records, digests, decisions files, branches, worktrees, pull requests, the lock, the proved-tree record — and **never runs a build tool by name**. Everything that depends on the stack is a command the repository names in `slipway.config.json`, and the plugin runs it through one runner, `slipway run <name>`: a dependency-free Node script shipped in the plugin's `bin/`, which Claude Code puts on the Bash tool's `PATH`, that resolves the command, takes the lock when the command is listed under one, and spawns it through the platform's shell. The skills say `slipway run check`, `slipway run step-check`, `slipway run gate`, and never `pnpm`, `npm`, `make` or `cargo`.
+The plugin owns what is the same in every repository — the ledger, plans, records, digests, decisions files, branches, worktrees, pull requests, the lock, the proved-tree record — and **never runs a build tool by name**. Everything that depends on the stack is a command the repository names in `slipway.config.json`, and the plugin runs it through one runner, `slipway run <name>`: a dependency-free Node script shipped in the plugin's `bin/`, which Claude Code puts on the `PATH` of both the Bash tool and, on Windows, the PowerShell tool (`bin/slipway.cmd` runs it there; §13.1), that resolves the command, takes the lock when the command is listed under one, and spawns it through the platform's shell. The skills say `slipway run check`, `slipway run step-check`, `slipway run gate`, and never `pnpm`, `npm`, `make` or `cargo`.
 
 A pnpm monorepo's config, as an example:
 
@@ -324,7 +324,7 @@ Two things to know about dogfooding. A skill edited mid-session keeps its old te
 - **`CI: off` lanes merge without a remote proof.** Accepted knowingly; the ship comment says so in so many words, and `ci.main` keeps the default branch's own pushes proved where the repository pays for it.
 - **`context: fork` and `skills:` preloading are recent features.** Declare the minimum in `plugin.json`'s `engines.claude-code` and have `init` check `claude --version`, since enforcement of `engines` is not documented.
 - **Each clone installs the plugin by hand once.** A committed `enabledPlugins` entry does not download anything; a collaborator who skips the README's setup line sees the process commands missing. Accepted: it is one command, and `init` writes it into the README.
-- **The plugin's cache path changes per version.** Nothing in a consumer may hard-code it; the skills use `${CLAUDE_PLUGIN_ROOT}` and the Bash tool uses `bin/slipway` on `PATH`.
+- **The plugin's cache path changes per version.** Nothing in a consumer may hard-code it; the skills use `${CLAUDE_PLUGIN_ROOT}` and the Bash and PowerShell tools use `slipway` from `bin/` on `PATH`.
 
 ## 11. Stack-agnostic
 
@@ -354,7 +354,7 @@ The test applied to every mechanism: **would a Python service with pytest and Gi
 
 What remains opinionated, and should: the method itself. Records with an amendment window, one-page plans whose done-whens are commands, one bounded review per step, decisions asked at scope and provisional in a step, a branch and a pull request per deliverable. A team that does not want those does not want this plugin; a team that does can run it on any stack that can name one command that proves its tree.
 
-Two things only a live run settles, and v0.1 spikes first: whether a `bin/slipway` shim without a file extension runs on Windows under the Bash tool's Git Bash (the docs say `.cmd` and `.bat` shims cannot be spawned in exec form, which is a different path), and how `${CLAUDE_PLUGIN_ROOT}` behaves in a skill that is forked into a subagent.
+Two things only a live run settles, and v0.1 spikes first: whether a `bin/slipway` shim without a file extension runs on Windows under the Bash tool's Git Bash (the docs say `.cmd` and `.bat` shims cannot be spawned in exec form, which is a different path), and how `${CLAUDE_PLUGIN_ROOT}` behaves in a skill that is forked into a subagent. Both held (docs/spikes/). The Windows PowerShell tool gets the same `bin/` on its `PATH` but cannot run an extensionless file, so v0.2 adds `bin/slipway.cmd` beside it (§13.1).
 
 ## 12. Greenfield or brownfield?
 
@@ -389,6 +389,7 @@ slipway/                             the repository; also its own marketplace
   agents/{step-builder,code-reviewer,adr-reviewer,security-reviewer,adr-author,gate-runner}.md
   hooks/hooks.json                   SessionStart → node ${CLAUDE_PLUGIN_ROOT}/scripts/orient.mjs (exec form)
   bin/slipway                        the command runner and the plugin's verbs, on the Bash tool's PATH
+  bin/slipway.cmd                    the same runner for cmd.exe and the PowerShell tool
   scripts/*.mjs, scripts/*.test.mjs  dependency-free Node 20; `node --test`
   templates/                         ledger.md, roadmap.md, shipped.md, record.md, process-record.md, plan.md,
                                      decisions.md, slipway.config.json, rules-loader.md, settings-fragment.json
@@ -398,7 +399,7 @@ slipway/                             the repository; also its own marketplace
   .github/workflows/test.yml         node --test, `claude plugin validate .` --strict
 ```
 
-Facts that shaped it: `plugin.json`'s `name` namespaces every component (`/slipway:scope`). A marketplace entry's `source: "./"` points at the repository root, so one repository is plugin and marketplace at once. `engines.claude-code` exists from v2.1.323 as a declared minimum; enforcement is not documented, so `init` also checks `claude --version` itself. A `CLAUDE.md` at the plugin root is **not** loaded as context, so the one always-on sentence lives in the consuming repository's `CLAUDE.md`, written by `init`. `${CLAUDE_PLUGIN_ROOT}` is substituted inline in skill, agent and hook text but is **not** in the Bash tool's environment, which is why the runner is a `bin/` executable rather than a path the skill asks Claude to type. Hooks in exec form (`"command": "node", "args": […]`) spawn without a shell and behave the same on Windows and Unix.
+Facts that shaped it: `plugin.json`'s `name` namespaces every component (`/slipway:scope`). A marketplace entry's `source: "./"` points at the repository root, so one repository is plugin and marketplace at once. `engines.claude-code` exists from v2.1.323 as a declared minimum; enforcement is not documented, so `init` also checks `claude --version` itself. A `CLAUDE.md` at the plugin root is **not** loaded as context, so the one always-on sentence lives in the consuming repository's `CLAUDE.md`, written by `init`. `${CLAUDE_PLUGIN_ROOT}` is substituted inline in skill, agent and hook text but is **not** in the Bash or PowerShell tool's environment, which is why the runner is a `bin/` executable rather than a path the skill asks Claude to type. Claude Code (from v2.1.323) puts each enabled plugin's `bin/` on the PowerShell tool's `PATH` as well as the Bash tool's. Git Bash runs the extensionless `bin/slipway` by its shebang; PowerShell cannot, and finds `bin/slipway.cmd` through `PATHEXT` instead, which runs the same file with `node`. There is deliberately no `slipway.ps1`: PowerShell would pick it ahead of the `.cmd`, and a `.ps1` is refused when a Group Policy or `CLAUDE_CODE_POWERSHELL_RESPECT_EXECUTION_POLICY` overrides the tool's `-ExecutionPolicy Bypass`, while a `.cmd` is not subject to execution policy. The `.cmd` is CRLF (`.gitattributes`), since cmd's `call :label` misreads LF-only files. Hooks in exec form (`"command": "node", "args": […]`) spawn without a shell and behave the same on Windows and Unix.
 
 ### 13.2 Local development loop
 
