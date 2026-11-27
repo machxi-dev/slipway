@@ -1,0 +1,2 @@
+#!/usr/bin/env node
+console.log(`PROBE argv1=[${process.argv[1]}] env=[${process.env.CLAUDE_PLUGIN_ROOT ?? ''}]`);
