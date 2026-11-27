@@ -6,7 +6,7 @@ import { currentBranch, mainRoot } from './git.mjs';
 import { matches } from './glob.mjs';
 import { format } from './digest.mjs';
 import { LEDGER_HEADER, SHIPPED_HEADER, conflictsOutside, ledgerRows, readRows, renderLedger, roadmapEntries, rowLine, sameRows, setRow, shippedLine } from './ledger.mjs';
-import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord } from './plan.mjs';
+import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord, stepText } from './plan.mjs';
 import { today } from './records.mjs';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
@@ -79,6 +79,25 @@ export function skillsFor(config, paths) {
     if (area.paths.some((a) => globs.some((g) => overlaps(a, g)))) for (const s of area.skills) if (!skills.includes(s)) skills.push(s);
   }
   return skills;
+}
+
+/**
+ * What `slipway lane --step <k>` prints for the builder (§4.4): the plan's header and the step's section, the lane
+ * branch, the decisions file and the conventions skills. Returns { text, step, skills }, or null with no such step.
+ */
+export function stepBrief(config, lane, k) {
+  const text = stepText(lane.plan, k);
+  if (!text) return null;
+  const step = lane.plan.steps.find((s) => s.k === k);
+  const skills = skillsFor(config, step.fields.Paths ?? '');
+  const lines = [
+    text,
+    '',
+    `Lane branch: ${lane.branch}${lane.current === lane.branch ? '' : ` (checked out: ${lane.current ?? 'detached'})`}`,
+    `Decisions file: ${lane.decisionsFile}`,
+    `Conventions skills: ${skills.length ? skills.join(', ') : 'none'}`,
+  ];
+  return { text: lines.join('\n'), step, skills };
 }
 
 /** §4.2: a new or open plan naming a record another open plan names, or two open plans adding migrations. */
