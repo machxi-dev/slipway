@@ -11,14 +11,6 @@ The build plan: tracks, what each deliverable needs, the order, the candidates, 
 
 <!-- One entry per planned row: "### D<n> — <title>", its one-line scope, what it needs, the records it will likely write or touch. -->
 
-### D2 — Tool calls the permission layer allows, and the builder context counted
-
-Skills and agents run one plain command per call, write with Write, change with Edit and grep with the Grep tool (ship step 8's $(git rev-parse) included); the gate-runner runs in the foreground instead of polling; the step-builder's skill listing is dropped or counted by slipway report.
-
-- Findings: D1 run defects 1 (eleven refused Bash calls: `$( )`, `${ }`, groups, `echo "exit $?"`, `! grep`, redirects, `sed -i`), 3 (Skill tool puts a ~21 KB skill listing in the builder; §4.4 says `skills:` preload) and 4 (gate-runner polled a background gate with until/grep/sleep for ~75 s).
-- Needs: nothing. step-builder.md is at 3,964 of its 4,096-byte ceiling.
-- Records: none expected; design §4.4 and §7 if the builder's tools or the report change.
-
 ### D3 — Release, pull request and process record 0002
 
 Release bump renames the changelog's Unreleased heading and the release title comes from one source; the lane pull request says what it delivers; record 0002 supersedes 0001 for follow-up commits, one proof at ship and protected default branches; ship's tag wording, worktree removal and default-branch update fixed.

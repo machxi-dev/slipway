@@ -2,7 +2,7 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
-## Unreleased
+## 0.2.1 — 2026-11-27
 
 ### Fixed
 
