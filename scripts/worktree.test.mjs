@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { git, slipway, tempRepo } from './testing.mjs';
 
@@ -93,8 +93,44 @@ function behindOrigin(t) {
   git(other, 'add', 'merged.txt');
   git(other, 'commit', '-q', '-m', 'the lane merged');
   git(other, 'push', '-q', 'origin', 'main');
-  return { repo, head: git(other, 'rev-parse', 'HEAD') };
+  return { repo, other, head: git(other, 'rev-parse', 'HEAD') };
 }
+
+/** In `other`, a lane on `branch` whose plan's `- Branch:` names it, pushed and merged into origin's main. */
+function mergedLane(repo, other, n, branch) {
+  const plans = JSON.parse(readFileSync(path.join(repo, 'slipway.config.json'), 'utf8')).docs?.plans ?? 'docs/plan';
+  git(other, 'checkout', '-q', '-b', branch, 'main');
+  mkdirSync(path.join(other, plans), { recursive: true });
+  writeFileSync(path.join(other, plans, `D${n}.md`), `# D${n}. A lane\n\n- Status: shipped\n- Records: none\n- CI: off\n- Branch: \`${branch}\`\n`);
+  git(other, 'add', '-A');
+  git(other, 'commit', '-q', '-m', `D${n}`);
+  git(other, 'push', '-q', 'origin', branch);
+  git(other, 'checkout', '-q', 'main');
+  git(other, 'merge', '-q', '--no-ff', '-m', `Merge ${branch}`, branch);
+  git(other, 'push', '-q', 'origin', 'main');
+  git(repo, 'fetch', '-q', 'origin', branch);
+  git(repo, 'branch', '-q', branch, `origin/${branch}`);
+}
+
+test('worktree remove finds the plan’s branch from the main checkout on another branch, in the worktree or on the default branch', (t) => {
+  const { repo, other } = behindOrigin(t);
+  mergedLane(repo, other, 6, 'claude/thread-six');
+  mergedLane(repo, other, 7, 'claude/thread-seven');
+  const wt = path.join(path.dirname(repo), 'shop-D6');
+  git(repo, 'worktree', 'add', '-q', wt, 'claude/thread-six');
+  git(repo, 'checkout', '-q', '-b', 'elsewhere');
+  // D6: the worktree is still there, and its plan names the branch.
+  let r = slipway(repo, ['worktree', 'remove', 'D6']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(existsSync(wt), false);
+  assert.equal(git(repo, 'branch', '--list', 'claude/thread-six'), '');
+  assert.equal(git(repo, 'ls-remote', '--heads', 'origin', 'claude/thread-six'), '');
+  // D7: no worktree, and this checkout has no plan; the default branch, brought up to origin, has it.
+  r = slipway(repo, ['worktree', 'remove', 'D7']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(git(repo, 'branch', '--list', 'claude/thread-seven'), '');
+  assert.equal(git(repo, 'ls-remote', '--heads', 'origin', 'claude/thread-seven'), '');
+});
 
 test('worktree remove updates the default branch when the main checkout is on another branch', (t) => {
   const { repo, head } = behindOrigin(t);
@@ -131,6 +167,20 @@ test('worktree remove refuses, and removes nothing, when the default branch has 
   assert.match(r.stderr, /nothing was removed/);
   assert.equal(existsSync(path.join(path.dirname(repo), 'shop-D6')), true);
   assert.notEqual(git(repo, 'branch', '--list', 'lane/D6'), '');
+});
+
+test('a stale worktree entry that has the default branch is not pulled in; git’s refusal is said, and nothing is removed', (t) => {
+  const { repo, head } = behindOrigin(t);
+  assert.equal(slipway(repo, ['worktree', 'D6']).code, 0);
+  git(repo, 'checkout', '-q', '-b', 'elsewhere');
+  const stale = path.join(path.dirname(repo), 'stale');
+  git(repo, 'worktree', 'add', '-q', stale, 'main');
+  rmSync(stale, { recursive: true, force: true });
+  const r = slipway(repo, ['worktree', 'remove', 'D6']);
+  assert.equal(r.code, 1, r.stderr);
+  assert.match(r.stderr, /git fetch -q origin main:main: fatal: refusing to fetch into branch .*; nothing was removed/);
+  assert.notEqual(git(repo, 'rev-parse', 'main'), head);
+  assert.equal(existsSync(path.join(path.dirname(repo), 'shop-D6')), true);
 });
 
 test('a new lane branch starts from the default branch, not from the checkout it is made in', (t) => {
