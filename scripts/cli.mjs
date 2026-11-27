@@ -4,11 +4,18 @@ import path from 'node:path';
 import { ConfigError, loadConfig } from './config.mjs';
 import { repoRoot } from './git.mjs';
 import { runCommand } from './run.mjs';
+import { init, parseInitArgs } from './init.mjs';
 
 const USAGE = `usage: slipway <verb> [args]
 
   run <name> [args...]   run a command named in slipway.config.json, from the repository root
   run                    list the command names
+  init [options]         make this repository ready: config, ledger, records index, digests and their
+                         rule loaders, settings, the CLAUDE.md sentence, the README setup line
+      --check <cmd>      required for a new config: the command that proves the tree
+      --step-check <cmd>, --gate <cmd>   default to --check
+      --tag-prefix <p>, --forge github|none, --records|--plans|--digests <dir>, --specs <dir>|none
+      --brownfield       adopt an existing records folder (§12)
   config                 check slipway.config.json and print it with its defaults filled in
   version                print the plugin's version
 
@@ -41,6 +48,13 @@ const verbs = {
       throw new UsageError('SLIPWAY_LOCK_TIMEOUT must be a number of seconds, 0 or more');
     }
     return runCommand({ root, config, name, args: rest, pluginRoot, log: err, lockTimeoutMs });
+  },
+  async init(args, { cwd, pluginRoot, out, err }) {
+    const root = needRepo(cwd);
+    const { actions, warnings } = init(root, pluginRoot, parseInitArgs(args));
+    for (const a of actions) out(`${a.action.padEnd(7)} ${a.path}${a.note ? ` (${a.note})` : ''}`);
+    for (const w of warnings) err(`slipway init: warning: ${w}`);
+    return 0;
   },
   async config(args, { cwd, out }) {
     out(JSON.stringify(loadConfig(needRepo(cwd)), null, 2));
