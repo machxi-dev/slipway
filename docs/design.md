@@ -474,7 +474,7 @@ Reading the method's first home for v0.1 turned up cases its scripts and tests g
 - Line endings stay the repository's `.gitattributes` (§11); `docs-check` reads CRLF and LF alike and does not police them.
 - Specs: a `## Requirement:` has at least one `### Scenario:` with a WHEN and a THEN line and a `Proved by:` line whose backticked paths exist. Off when `docs.specs` is `null`.
 
-**Budgets** (`docs-check`, §7): the budget file is `slipway.budget.json` beside the config, an object from a path or a glob to a ceiling in bytes. A path entry wins over a glob; where two globs match, the lower ceiling holds; an entry that matches no file, and an entry that is not a positive whole number, are refused, so a ceiling cannot outlive the file it guarded.
+**Budgets** (`docs-check`, §7): the budget file is `slipway.budget.json` beside the config, an object from a path or a glob to a ceiling in bytes. A path entry wins over a glob; where two globs match, the lower ceiling holds; a path entry naming no file, and a ceiling that is not a positive whole number, are refused, so a ceiling cannot outlive the file it guarded. A glob may match nothing yet: the plans glob before the first scope.
 
 **Lane worktrees** (`lane-worktree`, §4.2): a file the `lane.copy` list names and the checkout lacks is skipped and named; one the worktree already has is left alone; contents are never printed. A worktree already at the path on the lane's branch is reused; one on another branch is refused. The branch is checked out where it exists and cut from the current head where it does not.
 
@@ -483,6 +483,7 @@ Reading the method's first home for v0.1 turned up cases its scripts and tests g
 - A lane on a branch the `lane.branch` pattern does not match, as a cloud session's given branch: the plan's `- Branch:` line names it, and `build` and `ship` find the lane from that line when the pattern finds none.
 - A session that may not push to the default branch: the scoping commit rides as the lane branch's first commit and reaches the default branch with the pull request, which `scope` says, and which is safe only while no other lane is open.
 - Reading the last run before a step (`CI: on`): a run cancelled by a later push is superseded, not failed; a run still going is left to the next step; no run because the pull request conflicts means merging the default branch in first; a run that cannot be read is said in the commit body and caught at the ship.
+- `skills:` preloading (§4.4) takes names fixed in the agent's file, and a plugin's `step-builder` cannot know a repository's conventions skills. v0.1 has the builder load them with the Skill tool as its first act, from the names `slipway lane` prints for the step's paths: one round-trip per skill. A generated project-level agent that preloads them is the alternative, left for when the round-trip is measured to matter.
 - A flake is the repository's step check's word, not the plugin's: what it calls one goes in `Flakes:` and is not a failure.
 - `ship`: a tag that already exists stops the ship (a tag is never moved, nothing is ever forced); with a forge the merge commit is fetched and its second parent checked against the lane's head before it is tagged; the annotation is written from a file, verbatim; the gate runs in the background with no timeout of its own.
 
