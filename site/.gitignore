@@ -1,0 +1,11 @@
+node_modules/
+.vitepress/cache/
+.vitepress/dist/
+
+# Written by scripts/sync.mjs from the repository's own files on every dev and build.
+src/index.md
+src/guide/getting-started.md
+src/guide/contributing.md
+src/guide/method.md
+src/commands/
+src/reference/
