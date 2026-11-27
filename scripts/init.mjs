@@ -63,12 +63,18 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     actions.push({ action: 'wrote', path: rel(file) });
   };
 
+  // Read the shared settings first, so a broken file stops init before it writes anything.
+  const settingsFile = path.join(root, '.claude', 'settings.json');
+  const settings = readSettings(settingsFile, rel(settingsFile));
+
   // The config: kept when present, otherwise made from the template and the options.
   const configFile = path.join(root, CONFIG_FILE);
   let config;
   if (existsSync(configFile)) {
     config = loadConfig(root);
     actions.push({ action: 'kept', path: CONFIG_FILE });
+    const ignored = CONFIG_OPTIONS.filter((k) => options[k] !== undefined).map((k) => `--${k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`);
+    if (ignored.length) warnings.push(`${CONFIG_FILE} exists, so ${ignored.join(', ')} changed nothing; edit the file instead`);
   } else {
     if (!options.check) {
       const e = new Error('a new config needs the command that proves the tree: --check "<command>"');
@@ -76,7 +82,7 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
       throw e;
     }
     const raw = JSON.parse(template('slipway.config.json'));
-    raw.defaultBranch = currentBranch(root) ?? raw.defaultBranch;
+    raw.defaultBranch = options.defaultBranch ?? defaultBranchOf(root) ?? raw.defaultBranch;
     raw.forge = options.forge ?? raw.forge;
     if (raw.forge === 'none') raw.ci.default = 'off';
     raw.tagPrefix = options.tagPrefix ?? slug(path.basename(root));
@@ -101,14 +107,18 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   // The records folder and its index. Brownfield adopts the records already there (§12).
   const recordsDir = abs(docs.records);
   const existing = existsSync(recordsDir)
-    ? readdirSync(recordsDir).filter((f) => f.endsWith('.md') && f.toLowerCase() !== 'readme.md')
+    ? readdirSync(recordsDir)
+        .filter((f) => f.endsWith('.md') && f.toLowerCase() !== 'readme.md')
+        .sort()
     : [];
+  let index = render(template('records-index.md'), { digests: docs.digests });
   if (existing.length && options.brownfield) {
     actions.push({ action: 'adopted', path: docs.records, note: `${existing.length} existing records, read as records without ## Rules` });
+    index += existing.map((f) => indexRow(recordsDir, f)).join('');
   } else if (existing.length) {
     warnings.push(`${docs.records} already holds ${existing.length} records; run init --brownfield to adopt them (§12)`);
   }
-  writeNew(path.join(recordsDir, 'README.md'), render(template('records-index.md'), { digests: docs.digests }));
+  writeNew(path.join(recordsDir, 'README.md'), index);
 
   // Digests and their loaders: one general, plus one per area when areas are named (§5.2, §11).
   const digests = [{ name: 'general', scope: 'the whole repository', paths: null }];
@@ -119,7 +129,9 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     // A loader with paths loads when Claude works on a matching file; one without loads in every session.
     const frontmatter = d.paths ? `---\npaths:\n${d.paths.map((p) => `  - ${JSON.stringify(p)}`).join('\n')}\n---\n\n` : '';
     const loader = path.join(root, '.claude', 'rules', d.paths ? `slipway-${d.name}.md` : 'slipway.md');
-    writeNew(loader, render(template('rules-loader.md'), { frontmatter, records: docs.records, digest }));
+    // An @ import resolves against the file that holds it, so the path is relative to the loader.
+    const imported = posix(path.relative(path.dirname(loader), abs(digest)));
+    writeNew(loader, render(template('rules-loader.md'), { frontmatter, records: docs.records, digest: imported }));
   }
   if (docs.specs) {
     const specs = abs(docs.specs);
@@ -128,10 +140,7 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   }
 
   // .claude/settings.json gains the marketplace and the plugin, keeping everything else (§13.4).
-  const settingsFile = path.join(root, '.claude', 'settings.json');
   const fragment = JSON.parse(template('settings-fragment.json'));
-  let settings = {};
-  if (existsSync(settingsFile)) settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   let changed = false;
   for (const [key, entries] of Object.entries(fragment)) {
     settings[key] ??= {};
@@ -150,23 +159,66 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   } else actions.push({ action: 'kept', path: rel(settingsFile) });
 
   // The one always-on sentence lives in the repository's CLAUDE.md; the plugin's own is never loaded (§13.1).
-  appendOnce(path.join(root, 'CLAUDE.md'), '<!-- slipway -->', template('claude-md.md'), actions, rel);
+  const claudeMd = [path.join(root, 'CLAUDE.md'), path.join(root, '.claude', 'CLAUDE.md')].find(existsSync) ?? path.join(root, 'CLAUDE.md');
+  appendOnce(claudeMd, '<!-- slipway -->', template('claude-md.md'), actions, rel);
   // Each clone installs the plugin once; the README says how (§10, §13.4).
-  appendOnce(path.join(root, 'README.md'), 'claude plugin install slipway@slipway', template('readme-setup.md'), actions, rel);
+  const readme = readdirSync(root).find((f) => /^readme\.(md|markdown)$/i.test(f)) ?? 'README.md';
+  appendOnce(path.join(root, readme), 'claude plugin install slipway@slipway', template('readme-setup.md'), actions, rel);
 
   const warning = claudeVersionWarning(pluginRoot, installedClaude);
   if (warning) warnings.push(warning);
   return { config, actions, warnings };
 }
 
+const CONFIG_OPTIONS = ['check', 'stepCheck', 'gate', 'tagPrefix', 'forge', 'records', 'plans', 'digests', 'specs', 'defaultBranch'];
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+function readSettings(file, name) {
+  if (!existsSync(file)) return {};
+  let settings;
+  try {
+    settings = JSON.parse(readFileSync(file, 'utf8'));
+  } catch (err) {
+    throw new Error(`${name} is not valid JSON (${err.message}); fix it and run init again`);
+  }
+  if (!isObject(settings)) throw new Error(`${name} must hold one JSON object`);
+  for (const key of ['extraKnownMarketplaces', 'enabledPlugins']) {
+    if (settings[key] !== undefined && !isObject(settings[key])) throw new Error(`${name}: ${key} must be an object`);
+  }
+  return settings;
+}
+
+/** The repository's default branch: the remote's HEAD, else the only local branch, else null. */
+function defaultBranchOf(root) {
+  const remote = gitOut(root, ['symbolic-ref', '--short', '-q', 'refs/remotes/origin/HEAD']);
+  if (remote) return remote.replace(/^origin\//, '');
+  const branches = gitOut(root, ['for-each-ref', '--format=%(refname:short)', 'refs/heads']);
+  const list = branches ? branches.split('\n') : [];
+  if (list.length <= 1) return currentBranch(root);
+  return null;
+}
+
+function gitOut(cwd, args) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '';
+}
+
+/** One row of the records index for an adopted record: its file, its first heading, its Status line. */
+function indexRow(dir, file) {
+  const text = readFileSync(path.join(dir, file), 'utf8');
+  const title = /^#\s+(.+)$/m.exec(text)?.[1]?.trim() ?? file;
+  const status = /^[-*]?\s*Status:\s*(\S+)/im.exec(text)?.[1]?.toLowerCase() ?? 'unknown';
+  return `| [${file.replace(/\.md$/, '')}](${file}) | ${title.replace(/\|/g, '\\|')} | ${status} |\n`;
+}
+
 function appendOnce(file, marker, text, actions, rel) {
-  const had = existsSync(file);
-  const current = had ? readFileSync(file, 'utf8') : '';
+  const current = existsSync(file) ? readFileSync(file, 'utf8') : '';
+  const had = current.trim() !== '';
   if (current.includes(marker)) {
     actions.push({ action: 'kept', path: rel(file) });
     return;
   }
-  const body = had ? `${current.replace(/\s*$/, '\n')}${text}` : text.replace(/^\n/, '');
+  const body = had ? `${current.trimEnd()}\n${text}` : text.replace(/^\n/, '');
   writeFileSync(file, body);
   actions.push({ action: had ? 'updated' : 'wrote', path: rel(file) });
 }
@@ -183,6 +235,7 @@ export function parseInitArgs(args) {
     '--plans': 'plans',
     '--digests': 'digests',
     '--specs': 'specs',
+    '--default-branch': 'defaultBranch',
   };
   const options = {};
   for (let i = 0; i < args.length; i++) {

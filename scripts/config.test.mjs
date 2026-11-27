@@ -68,14 +68,14 @@ test('every problem is reported at once, with its path', () => {
     version: 2,
     forge: 'gitlab',
     tagPrefix: 'x',
-    docs: { records: '' },
+    docs: { records: '', plans: 'docs/x', digests: 'docs/x/' },
     lane: { branch: 'lane/D', setup: 3 },
     commands: { check: 'c', 'step-check': 's', gate: 'g', Bad: 'x' },
     locks: { tiers: ['nope', 'toString'] },
     ci: { default: 'sometimes' },
     merge: 'rebase',
     defaultBranch: 5,
-    areas: { web: { skills: ['x'] } },
+    areas: { web: { skills: ['x'] }, general: { paths: ['x/**'] } },
     extra: true,
   });
   assert.deepEqual(problems, [
@@ -84,6 +84,7 @@ test('every problem is reported at once, with its path', () => {
     'defaultBranch: must be a non-empty string',
     'forge: must be one of "github", "none"',
     'docs.records: must be a non-empty string',
+    'docs.digests: must differ from docs.plans',
     'lane.setup: must be a non-empty string or null',
     'lane.branch: must contain {n} exactly once',
     'commands.Bad: a command name is lower-case letters, digits and hyphens',
@@ -92,6 +93,7 @@ test('every problem is reported at once, with its path', () => {
     'ci.default: must be one of "on", "at-ship", "off"',
     'merge: must be one of "merge-commit", "squash"',
     'areas.web.paths: required',
+    'areas.general: "general" is the digest for the whole repository; name the area otherwise',
   ]);
 });
 

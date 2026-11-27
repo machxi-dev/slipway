@@ -15,7 +15,8 @@ const USAGE = `usage: slipway <verb> [args]
       --check <cmd>      required for a new config: the command that proves the tree
       --step-check <cmd>, --gate <cmd>   default to --check
       --tag-prefix <p>, --forge github|none, --records|--plans|--digests <dir>, --specs <dir>|none
-      --brownfield       adopt an existing records folder (§12)
+      --default-branch <b>   default: the remote's HEAD, or the only local branch
+      --brownfield       adopt an existing records folder into the records index (§12)
   config                 check slipway.config.json and print it with its defaults filled in
   version                print the plugin's version
 
