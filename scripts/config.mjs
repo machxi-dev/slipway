@@ -71,6 +71,16 @@ export function normalize(raw, file = CONFIG_FILE) {
     specs: str(docsIn.specs, 'docs.specs', 'docs/specs', { nullable: true }),
   };
 
+  const folders = Object.entries(docs).filter(([, v]) => isString(v));
+  for (let i = 0; i < folders.length; i++) {
+    for (let j = i + 1; j < folders.length; j++) {
+      const same = (x) => path.posix.normalize(x.replaceAll('\\', '/')).replace(/\/+$/, '');
+      if (same(folders[i][1]) === same(folders[j][1])) {
+        bad(`docs.${folders[j][0]}`, `must differ from docs.${folders[i][0]}`);
+      }
+    }
+  }
+
   const laneIn = section(raw.lane, 'lane');
   known(laneIn, 'lane', ['branch', 'worktree', 'copy', 'setup']);
   const lane = {
@@ -136,6 +146,7 @@ export function normalize(raw, file = CONFIG_FILE) {
   for (const [slug, area] of Object.entries(section(raw.areas, 'areas'))) {
     const where = `areas.${slug}`;
     if (!NAME.test(slug)) bad(where, 'an area slug is lower-case letters, digits and hyphens');
+    if (slug === 'general') bad(where, '"general" is the digest for the whole repository; name the area otherwise');
     if (!isObject(area)) {
       bad(where, 'must be an object');
       continue;

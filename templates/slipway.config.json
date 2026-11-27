@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "defaultBranch": "main",
+  "forge": "github",
+  "tagPrefix": "app",
+  "docs": {
+    "records": "docs/adr",
+    "plans": "docs/plan",
+    "digests": "docs/rules",
+    "specs": "docs/specs"
+  },
+  "lane": { "branch": "lane/D{n}", "worktree": "../{repo}-D{n}" },
+  "commands": {
+    "check": "",
+    "step-check": "",
+    "gate": ""
+  },
+  "ci": { "default": "on" },
+  "release": null,
+  "merge": "merge-commit"
+}
