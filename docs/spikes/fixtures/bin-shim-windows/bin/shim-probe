@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+console.log(`SHIM OK platform=${process.platform} node=${process.version}`);
+console.log(`argv1=${process.argv[1]}`);
+console.log(`args=${JSON.stringify(process.argv.slice(2))}`);
+process.exit(Number(process.env.SHIM_EXIT ?? 0));
