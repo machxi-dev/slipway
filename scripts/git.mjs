@@ -34,18 +34,25 @@ const tryGit = (cwd, args) => {
   }
 };
 
+/** How long a fetch for reading may take before the refs already here are read instead. */
+export const FETCH_TIMEOUT_MS = 15_000;
+
 /**
- * The branches origin has whose names match `pattern` (one `*`), fetched first, as short names. None when there is
- * no origin; when the fetch fails, as offline, the remote-tracking refs already here.
+ * The branches origin has, fetched first, as short names. None when there is no origin; when the fetch fails or
+ * times out, as offline or where it would ask for a credential, the remote-tracking refs already here.
  */
-export function remoteBranches(cwd, pattern) {
+export function remoteBranches(cwd) {
   if (tryGit(cwd, ['remote', 'get-url', 'origin']) === null) return [];
+  // Never a prompt: not on the terminal, not from ssh (unless the repository sets its own ssh command), not from a
+  // credential manager's window. A fetch that would ask fails, and the timeout ends one that hangs regardless.
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' };
+  if (!env.GIT_SSH_COMMAND && tryGit(cwd, ['config', 'core.sshCommand']) === null) env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes';
   try {
-    // Never a prompt for credentials: a fetch that needs one fails, and the refs already here stand.
-    execFileSync('git', ['fetch', '-q', '--prune', 'origin', `+refs/heads/${pattern}:refs/remotes/origin/${pattern}`], {
+    execFileSync('git', ['-c', 'credential.interactive=never', 'fetch', '-q', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*'], {
       cwd,
       stdio: 'ignore',
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env,
+      timeout: FETCH_TIMEOUT_MS,
     });
   } catch {
     // Read what is here.
@@ -59,6 +66,12 @@ export function remoteBranches(cwd, pattern) {
 
 /** A file's text at a ref, by its path from cwd, or null when the ref has no such file. */
 export const showFile = (cwd, ref, file) => tryGit(cwd, ['show', `${ref}:./${file}`]);
+
+/** The names of the files in a directory that `ref` changes since its merge base with `base`, or null when either is unknown. */
+export function changedFiles(cwd, base, ref, dir) {
+  const out = tryGit(cwd, ['diff', '--name-only', '--relative', `${base}...${ref}`, '--', `${dir}/`]);
+  return out === null ? null : out.split('\n').filter(Boolean).map((p) => path.posix.basename(p));
+}
 
 /** The names of the files in a directory at a ref, by its path from cwd; none when the ref has no such directory. */
 export const listFiles = (cwd, ref, dir) =>

@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { laneBranch, laneFromBranch, laneWorktree } from './config.mjs';
-import { currentBranch, listFiles, mainRoot, remoteBranches, showFile } from './git.mjs';
+import { changedFiles, currentBranch, listFiles, mainRoot, remoteBranches, showFile } from './git.mjs';
 import { matches } from './glob.mjs';
 import { format } from './digest.mjs';
 import { LEDGER_HEADER, SHIPPED_HEADER, conflictsOutside, ledgerRows, readRows, renderLedger, roadmapEntries, rowLine, sameRows, setRow, shippedLine } from './ledger.mjs';
@@ -129,18 +129,34 @@ export function stepBrief(config, lane, k) {
   return { text: lines.join('\n'), step, skills };
 }
 
+const plansPath = (config) => posix(path.normalize(config.docs.plans));
+const planNumbers = (files) => files.map((f) => /^D(\d+)\.md$/.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+
 /**
- * The lane branches on origin, by the lane.branch pattern, fetched first: [{ ref, n }]. None when there is no origin
- * (§4.1: a planned or open row reaches the default branch only with its lane).
+ * The lane branches on origin, fetched first: [{ ref, n, patterned }]. None when there is no origin (§4.1: a planned
+ * or open row reaches the default branch only with its lane). A branch the lane.branch pattern matches is lane n's;
+ * any other is a lane where a plan it adds or changes since the default branch names it in `- Branch:` (§14), as
+ * findLane reads a checkout.
  */
 export function remoteLanes(root, config) {
-  const [before, after] = config.lane.branch.split('{n}');
-  return remoteBranches(root, `${before}*${after}`)
-    .map((b) => ({ ref: `refs/remotes/origin/${b}`, n: laneFromBranch(config, b)?.n }))
-    .filter((l) => l.n !== undefined);
+  const dir = plansPath(config);
+  const base = `refs/remotes/origin/${config.defaultBranch}`;
+  const lanes = [];
+  for (const branch of remoteBranches(root)) {
+    if (branch === 'HEAD' || branch === config.defaultBranch) continue;
+    const ref = `refs/remotes/origin/${branch}`;
+    const n = laneFromBranch(config, branch)?.n;
+    if (n !== undefined) {
+      lanes.push({ ref, n, patterned: true });
+      continue;
+    }
+    for (const m of planNumbers(changedFiles(root, base, ref, dir) ?? listFiles(root, ref, dir))) {
+      const text = showFile(root, ref, `${dir}/${planName(m)}`);
+      if (text !== null && branchOf(parsePlan(text)) === branch) lanes.push({ ref, n: m, patterned: false });
+    }
+  }
+  return lanes;
 }
-
-const plansPath = (config) => posix(path.normalize(config.docs.plans));
 
 /** The plan a lane branch on origin holds for its own lane, as { n, plan }, or null. */
 function remotePlan(root, config, lane) {
@@ -184,11 +200,11 @@ const ledgerFiles = (root, config) => {
 const readIf = (f) => (existsSync(f) ? readFileSync(f, 'utf8') : '');
 
 const roadmapNumbers = (text) => [...text.matchAll(/\bD(\d+)\b/g)].map((m) => Number(m[1]));
-const planNumbers = (files) => files.map((f) => /^D(\d+)\.md$/.exec(f)).filter(Boolean).map((m) => Number(m[1]));
 
 /**
  * The number after every deliverable the ledger, the shipped rows, the roadmap and the plans name, in the
  * checked-out tree and on each lane branch on origin: a row planned or scoped there is not on the default branch yet.
+ * A branch the pattern does not match gives its own plan's number and its roadmap's, not the plans it carries.
  */
 export function nextDeliverable(root, config) {
   const f = ledgerFiles(root, config);
@@ -200,7 +216,7 @@ export function nextDeliverable(root, config) {
   ];
   const dir = plansPath(config);
   for (const lane of remoteLanes(root, config)) {
-    nums.push(lane.n, ...planNumbers(listFiles(root, lane.ref, dir)), ...roadmapNumbers(showFile(root, lane.ref, `${dir}/ROADMAP.md`) ?? ''));
+    nums.push(lane.n, ...(lane.patterned ? planNumbers(listFiles(root, lane.ref, dir)) : []), ...roadmapNumbers(showFile(root, lane.ref, `${dir}/ROADMAP.md`) ?? ''));
   }
   return Math.max(0, ...nums) + 1;
 }

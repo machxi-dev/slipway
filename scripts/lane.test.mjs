@@ -115,11 +115,16 @@ test('the next deliverable counts the plans on the remote\'s lane branches', (t)
   pushBranch(repo, 'lane/D3', {});
   pushBranch(repo, 'topic/D40', { 'docs/plan/D40.md': planD(40) });
   assert.equal(git(repo, 'branch', '--list', '-r', 'origin/lane/*'), '', 'nothing here before the fetch');
-  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D6', 'the roadmap entry on lane/D2; topic/D40 is not a lane branch');
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D6', 'the roadmap entry on lane/D2; D40 on topic/D40 names lane/D40, not it');
+  // A branch the pattern does not match is a lane when a plan on it names it (§14).
+  pushBranch(repo, 'claude/given', { 'docs/plan/D7.md': planD(7).replace('`lane/D7`', '`claude/given`') });
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D8');
   pushBranch(repo, 'lane/D9', {});
   git(repo, 'remote', 'set-url', 'origin', path.join(path.dirname(repo), 'gone.git'));
-  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D6', 'a failed fetch reads the refs already here');
-  git(repo, 'remote', 'remove', 'origin');
+  assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D8', 'a failed fetch reads the refs already here');
+  // The remote goes and its refs stay: nothing is read without an origin.
+  git(repo, 'config', '--remove-section', 'remote.origin');
+  assert.notEqual(git(repo, 'branch', '--list', '-r', 'origin/lane/*'), '');
   assert.equal(slipway(repo, ['ledger', 'next']).stdout.trim(), 'D1', 'no remote, nothing read');
 });
 
@@ -159,8 +164,14 @@ test('the overlap warning reads open plans on the remote\'s lane branches', (t) 
   pushBranch(repo, 'lane/D5', { 'docs/plan/D5.md': planD(5, 'planned') });
   // A copy of another lane's plan on a lane branch is not that lane's: lane/D7's own plan is.
   pushBranch(repo, 'lane/D7', { 'docs/plan/D7.md': planD(7, 'shipped 2026-11-27'), 'docs/plan/D8.md': planD(8) });
+  // A branch the pattern does not match: its plan that names it is read, its plan that names another branch is not.
+  pushBranch(repo, 'claude/given', { 'docs/plan/D9.md': planD(9).replace('`lane/D9`', '`claude/given`'), 'docs/plan/D10.md': planD(10) });
   write(repo, 'docs/plan/D6.md', migrating(planD(6, 'planned')));
-  const expected = ['D6 and D4 (in progress) both name 0003-money.md, 0005-queue.md', 'D6 and D4 (in progress) both add migrations'];
+  const expected = [
+    'D6 and D4 (in progress) both name 0003-money.md, 0005-queue.md',
+    'D6 and D4 (in progress) both add migrations',
+    'D6 and D9 (in progress) both name 0003-money.md, 0005-queue.md',
+  ];
   assert.deepEqual(overlapWarnings(repo, config, 6), expected);
   write(repo, 'docs/plan/D4.md', migrating(planD(4)));
   assert.deepEqual(overlapWarnings(repo, config, 6), expected, 'found here and on its branch, it counts once');
