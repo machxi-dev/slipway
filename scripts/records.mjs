@@ -19,6 +19,8 @@ export const slugify = (s) =>
     .replace(/-$/, '') || 'record';
 
 const STATUS_LINE = /^[-*]?\s*Status:[ \t]*(.*)$/im;
+/** `0007-x.md`, `ADR-0007-x.md`, `adr_7.md`: an optional prefix, then the number. */
+const NUMBERED = /^((?:adr[-_]?)?)(\d+)[-_.]/i;
 
 /** The status word of a record's text: proposed, accepted, superseded, or what the line says, lower-cased. */
 export function statusOf(text) {
@@ -37,7 +39,7 @@ export function listRecords(dir) {
     .sort()
     .map((file) => {
       const text = readFileSync(path.join(dir, file), 'utf8');
-      const digits = /^(\d+)-/.exec(file)?.[1] ?? null;
+      const digits = NUMBERED.exec(file)?.[2] ?? null;
       return { file, number: digits, title: titleOf(text, file), status: statusOf(text), text };
     });
 }
@@ -103,18 +105,25 @@ export function newRecord(dir, template, { title, supersedes = [], status = 'pro
   if (!title || !title.trim()) throw usage('a record needs a title');
   const records = listRecords(dir);
   const parents = supersedes.map((id) => findRecord(records, id));
+  const indexFile = path.join(dir, 'README.md');
+  if (!existsSync(indexFile) || !readFileSync(indexFile, 'utf8').split(/\r?\n/).some((l) => l.trim() === INDEX_HEADER)) {
+    throw usage(`${indexFile} has no "${INDEX_HEADER}" table; run slipway init (with --brownfield to adopt existing records)`);
+  }
   const number = nextNumber(records);
-  const file = `${number}-${slugify(title)}.md`;
+  // A corpus named `ADR-0007-….md` keeps its prefix.
+  const last = records.filter((r) => r.number !== null).at(-1);
+  const prefix = last ? NUMBERED.exec(last.file)[1] : '';
+  const file = `${prefix}${number}-${slugify(title)}.md`;
   let text = template
-    .replaceAll('{{id}}', number)
-    .replaceAll('{{title}}', title.trim())
-    .replaceAll('{{date}}', date);
+    .replaceAll('{{id}}', () => number)
+    .replaceAll('{{title}}', () => title.trim())
+    .replaceAll('{{date}}', () => date);
   text = withStatus(text, status);
   if (parents.length) text = text.replace(/^([-*]?\s*Supersedes:[ \t]*).*$/im, `$1${parents.map(link).join(', ')}`);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, file), text);
   const record = { file, number, title: `${number}. ${title.trim()}`, status: statusOf(text), text };
-  upsertIndexRow(path.join(dir, 'README.md'), record);
+  upsertIndexRow(indexFile, record);
   return record;
 }
 
@@ -137,6 +146,7 @@ export function acceptRecord(dir, id) {
     const parent = records.find((r) => r.file === f);
     if (!parent) throw usage(`${record.file} supersedes ${f}, which is not in the records folder`);
     if (parent.status === 'superseded') throw usage(`${f} is already superseded`);
+    if (!STATUS_LINE.test(parent.text)) throw usage(`${f} has no Status line to mark superseded; add one first`);
     return parent;
   });
   write(record, 'accepted');

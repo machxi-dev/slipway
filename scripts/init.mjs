@@ -125,8 +125,9 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
     actions.push({ action: 'wrote', path: rel(shippedFile) }, { action: 'wrote', path: rel(roadmapFile) });
     if (split.unread.length) warnings.push(`kept as planned, status not read: ${split.unread.join(', ')}`);
   }
-  if (!legacy) writeNew(ledgerFile, ledger);
-  if (!legacy || !options.brownfield) {
+  // A ledger in another shape is left whole until --brownfield splits it, so the split can still happen.
+  if (!legacy) {
+    writeNew(ledgerFile, ledger);
     writeNew(roadmapFile, template('roadmap.md'));
     writeNew(shippedFile, template('shipped.md'));
   }
@@ -137,10 +138,14 @@ export function init(root, pluginRoot, options = {}, { installedClaude = claudeV
   const existing = listRecords(recordsDir);
   const indexHad = existsSync(indexFile);
   const slipwayIndex = indexHad && readFileSync(indexFile, 'utf8').split(/\r?\n/).some((l) => l.trim() === INDEX_HEADER);
-  // A corpus without Slipway's index is the repository's own, adopted only when asked (§12).
+  // Records or an index without Slipway's table are the repository's own, adopted only when asked (§12).
   const adopt = existing.length > 0 && !slipwayIndex;
-  if (adopt && !options.brownfield) {
-    warnings.push(`${docs.records} already holds ${existing.length} records; run init --brownfield to adopt them (§12)`);
+  if ((adopt || (indexHad && !slipwayIndex)) && !options.brownfield) {
+    warnings.push(
+      adopt
+        ? `${docs.records} already holds ${existing.length} records; run init --brownfield to adopt them (§12)`
+        : `${rel(indexFile)} is an index of the repository's own; run init --brownfield to add Slipway's table to it (§12)`,
+    );
   } else {
     const header = render(template('records-index.md'), { digests: docs.digests });
     if (!slipwayIndex) {

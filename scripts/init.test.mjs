@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig } from './config.mjs';
 import { claudeVersionWarning, compareVersions, init, parseInitArgs } from './init.mjs';
@@ -286,7 +286,7 @@ test('--brownfield splits a ledger in another shape into the three files (§13.5
     '| --- | --- | --- | --- |',
     '| [D1](0001-skeleton.md) | Walking skeleton | shipped 2026-10-01 | the app boots |',
     '| [D2](0002-auth.md) | Auth | in progress | sign in |',
-    '| D3 | Billing | planned | invoices |',
+    '| D3 | Billing \\| invoices | planned (after D2 is done) | invoices |',
     '| D4 | Search | someday | maybe |',
     '',
     '## Build plan',
@@ -298,16 +298,25 @@ test('--brownfield splits a ledger in another shape into the three files (§13.5
   const plain = quiet(repo, { check: 'x' });
   assert.match(plain.warnings.join('\n'), /ledger in another shape; run init --brownfield/);
   assert.equal(read(repo, 'docs/plan/README.md'), old, 'left alone without --brownfield');
-  rmSync(path.join(repo, 'docs/plan/ROADMAP.md'));
-  rmSync(path.join(repo, 'docs/plan/SHIPPED.md'));
+  assert.equal(existsSync(path.join(repo, 'docs/plan/ROADMAP.md')), false, 'nothing is written beside it, so the split can follow');
 
   const brown = quiet(repo, { brownfield: true });
   assert.ok(brown.actions.some((a) => a.action === 'split' && a.path === 'docs/plan/README.md'), JSON.stringify(brown.actions));
   assert.match(brown.warnings.join('\n'), /kept as planned, status not read: D4: "someday"/);
   const ledger = read(repo, 'docs/plan/README.md');
-  assert.match(ledger, /\| D \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| \[D2\]\(0002-auth\.md\) \| Auth \| in progress \|\n\| D3 \| Billing \| planned \|\n\| D4 \| Search \| planned \|\n$/);
+  assert.match(ledger, /\| D \| Title \| Status \|\n\| --- \| --- \| --- \|\n\| \[D2\]\(0002-auth\.md\) \| Auth \| in progress \|\n\| D3 \| Billing \\\| invoices \| planned \|\n\| D4 \| Search \| planned \|\n$/);
   assert.match(read(repo, 'docs/plan/SHIPPED.md'), /\| \[D1\]\(0001-skeleton\.md\) \| Walking skeleton \| 2026-10-01 \|  \|\n$/);
   const roadmap = read(repo, 'docs/plan/ROADMAP.md');
   assert.match(roadmap, /## From the previous ledger\n\nTag prefix: `shop`\n\n## Build plan\n\nBilling waits for auth\.\n$/);
   assert.ok(quiet(repo, { brownfield: true }).actions.every((a) => a.action === 'kept'), 'a split ledger is Slipway’s');
+});
+
+test('an index of the repository’s own, with no records yet, is kept without --brownfield', (t) => {
+  const repo = tempRepo(t);
+  mkdirSync(path.join(repo, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(repo, 'docs/adr/README.md'), '# Our decisions\n');
+  const { warnings } = quiet(repo, { check: 'x' });
+  assert.equal(read(repo, 'docs/adr/README.md'), '# Our decisions\n');
+  assert.deepEqual(readdirSync(path.join(repo, 'docs/adr')), ['README.md']);
+  assert.match(warnings.join('\n'), /index of the repository's own; run init --brownfield/);
 });

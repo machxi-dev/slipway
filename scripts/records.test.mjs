@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { findRecord, listRecords, nextNumber, slugify, statusOf, supersededFiles, withStatus } from './records.mjs';
 import { slipway, tempRepo } from './testing.mjs';
@@ -74,4 +74,35 @@ test('accepting a record whose parent is missing or already superseded is refuse
   assert.equal(r.code, 2);
   assert.match(r.stderr, /supersedes 0009-gone\.md, which is not in the records folder/);
   assert.match(read(repo, 'docs/adr/0002-x.md'), /- Status: proposed/);
+});
+
+test('a parent without a Status line, or a folder without Slipway’s index, is refused before anything is written', (t) => {
+  const repo = ready(t);
+  writeFileSync(path.join(repo, 'docs/adr/0002-old.md'), '# Old\n');
+  writeFileSync(path.join(repo, 'docs/adr/0003-new.md'), '# 0003. New\n\n- Status: proposed\n- Supersedes: [0002](0002-old.md)\n');
+  const r = slipway(repo, ['adr', 'accept', '3']);
+  assert.equal(r.code, 2);
+  assert.match(r.stderr, /0002-old\.md has no Status line/);
+  assert.match(read(repo, 'docs/adr/0003-new.md'), /- Status: proposed/);
+
+  const bare = tempRepo(t, 'bare');
+  writeFileSync(path.join(bare, 'slipway.config.json'), JSON.stringify({ version: 1, tagPrefix: 'x', commands: { check: 'c', 'step-check': 's', gate: 'g' } }));
+  const n = slipway(bare, ['adr', 'new', 'X']);
+  assert.equal(n.code, 2);
+  assert.match(n.stderr, /run slipway init/);
+  assert.equal(listRecords(path.join(bare, 'docs/adr')).length, 0, 'no orphan record');
+});
+
+test('titles are written literally, and a corpus named ADR-NNNN keeps its prefix', (t) => {
+  const repo = ready(t);
+  slipway(repo, ['adr', 'new', "Cap spend at $$5 and $' more"]);
+  assert.match(read(repo, 'docs/adr/0002-cap-spend-at-5-and-more.md'), /^# 0002\. Cap spend at \$\$5 and \$' more$/m);
+
+  const old = tempRepo(t, 'old');
+  mkdirSync(path.join(old, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(old, 'docs/adr/ADR-0007-db.md'), '# ADR-0007: Db\n\n- Status: accepted\n');
+  assert.equal(slipway(old, ['init', '--check', 'x', '--brownfield']).code, 0);
+  assert.ok(existsSync(path.join(old, 'docs/adr/ADR-0008-the-process.md')));
+  const r = slipway(old, ['adr', 'new', 'Db again', '--supersedes', '7']);
+  assert.equal(r.stdout.trim(), 'docs/adr/ADR-0009-db-again.md', r.stderr);
 });

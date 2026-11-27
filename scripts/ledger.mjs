@@ -15,7 +15,7 @@ export function cells(line) {
   const body = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   for (let i = 0; i < body.length; i++) {
     if (body[i] === '\\' && body[i + 1] === '|') {
-      cur += '\\|';
+      cur += '|';
       i++;
     } else if (body[i] === '|') {
       out.push(cur.trim());
@@ -31,10 +31,11 @@ const linkIn = (s) => /\]\(([^)\s]+)\)/.exec(s)?.[1] ?? null;
 
 /** A status as the ledger writes it, or null when the text names none it knows. */
 export function normalizeStatus(s) {
-  const t = unlink(s).toLowerCase();
-  if (/in[ -]?progress|open|building/.test(t)) return 'in progress';
-  if (/shipped|done|merged|closed/.test(t)) return 'shipped';
-  if (/planned|scoped|todo|next/.test(t)) return 'planned';
+  // The cell's first word decides; anything after it ("shipped 2026-10-01", "planned (after D2)") is detail.
+  const t = unlink(s).toLowerCase().replace(/^[^a-z]+/, '');
+  if (/^in[ -]?progress\b/.test(t)) return 'in progress';
+  if (/^(shipped|done|merged)\b/.test(t)) return 'shipped';
+  if (/^(planned|scoped|next|todo)\b/.test(t)) return 'planned';
   return null;
 }
 
