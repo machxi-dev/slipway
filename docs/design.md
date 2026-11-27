@@ -437,6 +437,55 @@ A repository that already runs the method on its own skills, agents and scripts 
 7. The old process skills, agents and scripts are deleted; the repository's `.claude/README.md` shrinks to what is repository-specific; its budget file loses the entries for files that left.
 8. Done when the six commands run there beside Claude's own `/ship`, which is untouched, and that lane is the first shipped with `/slipway:ship`.
 
+## 14. Cases the first home's scripts guard
+
+Reading the method's first home for v0.1 turned up cases its scripts and tests guard that the sections above do not mention. Each is listed with what Slipway does about it, so that none is dropped silently. "Kept" means the named script guards it and a test proves it; "declined" says why not.
+
+**The lock** (`run`, §3.3):
+
+- Two waiters that read the same dead holder must not both take over: the slower one would remove the faster one's live lock. Kept: a waiter takes over only under a claim it creates atomically beside the lock, re-reads the holder under the claim, and clears a claim left by a waiter that died holding it after a grace period.
+- A runner killed by a signal it cannot catch (`SIGKILL`; on Windows nearly every stop) leaves its command running outside the lock, and the next waiter sees a dead holder. Kept, more simply than a watching process: the lock names the shell's process as well as the runner's, and is stale only when both are gone.
+- A command that calls `slipway run` for a lock its own tree holds, the bounded wait read from the environment and refused when it is not a number, a held lock never deleted by a session: kept, as built.
+- Windows reuses process ids, so a dead holder's id may name a live stranger. Declined: the lock then reads as live and the wait times out naming the holder; the operator removes it. Rare, and visible.
+
+**The proved tree** (`proved-tree`, §3.3):
+
+- The record is the worktree's own, in its git directory, never in the repository or the common directory; another worktree's proof is not this one's.
+- Untracked files count as changed; ignored files do not.
+- A record whose head is no longer an ancestor of `HEAD`, or whose tree git no longer has, is ignored rather than trusted: rewritten history proves nothing.
+- With no usable record, the base is the merge base of `HEAD` with the remote's default branch where it exists, else the local one. `--base <ref>` overrides both. The first line of the output names the base and why.
+- A red run records nothing; only the repository's `step-check` exiting zero moves the record.
+
+**Digests** (`rules-digest`, §5.2):
+
+- A rule's `(with: …)` naming a record that does not exist or is not `accepted` is refused, and so is an `(areas: …)` naming an area the config does not have. A line with no `(areas: …)` joins the general digest; a line may join several.
+- Supersession by a delta. The first home kept a delta-superseded parent's rule lines in force "as carried by" the successor, which took a parser for which references in a status line are successors and which are prose. Declined: in Slipway only `accepted` records contribute lines, and a successor that leaves some of a parent's rules standing carries those lines in its own `## Rules` with `(with: <parent>)`. The parent's body stays untouched; the generator reads one status.
+- An accepted record with no rule line was refused there. Declined as a refusal, since not every record governs code; the `adr-reviewer` reports an accepted record that governs code and has no `## Rules`.
+- The 120-word cap was grandfathered for older records by number. Kept by diff instead of by number or date: `docs-check` refuses an over-long line only in a record the current branch adds or changes against the default branch, so a brownfield move (§13.5 step 3) carries old lines as they are.
+- Committed digests that differ from the generator's output, after `commands.format`, are refused: kept, as §3.3 says.
+
+**The ledger, plans and decisions** (`docs-check`, §4.3, §4.7):
+
+- A ledger without its tag line, a row whose plan link does not resolve, a plan without the header lines `scope` writes: refused.
+- A step titled as a close-out, or one whose done-when is the definition of done: refused in plans that are not `shipped`, so a brownfield corpus's history is read as it is.
+- Decisions-file lines are read by shape: `Provisional (D<n>.<step>):` and `Owed (D<n>.<step>):` open, closed by `Ratified YYYY-MM-DD`, `Overturned YYYY-MM-DD, …` or `Paid D<m>.<step>`. A `shipped` plan with an open line is refused naming the file and line; a line in no known shape is refused rather than read as closed.
+- Relative links: the first home checked every relative link in every Markdown file, with care for code fences, angle-bracket targets and percent escapes. Declined beyond the links `docs-check` already parses (ledger rows, `Records:` lines, digest citations, `Proved by:` paths); a general link checker is the repository's own.
+- Files are listed with `git ls-files`, so a lane worktree inside the repository, or anything untracked or ignored, is never walked.
+- Line endings stay the repository's `.gitattributes` (§11); `docs-check` reads CRLF and LF alike and does not police them.
+- Specs: a `## Requirement:` has at least one `### Scenario:` with a WHEN and a THEN line and a `Proved by:` line whose backticked paths exist. Off when `docs.specs` is `null`.
+
+**Budgets** (`docs-check`, §7): the budget file is `slipway.budget.json` beside the config, an object from a path or a glob to a ceiling in bytes. A path entry wins over a glob; where two globs match, the lower ceiling holds; an entry that matches no file, and an entry that is not a positive whole number, are refused, so a ceiling cannot outlive the file it guarded.
+
+**Lane worktrees** (`lane-worktree`, §4.2): a file the `lane.copy` list names and the checkout lacks is skipped and named; one the worktree already has is left alone; contents are never printed. A worktree already at the path on the lane's branch is reused; one on another branch is refused. The branch is checked out where it exists and cut from the current head where it does not.
+
+**Build and ship** (§4.4, §4.5):
+
+- A lane on a branch the `lane.branch` pattern does not match, as a cloud session's given branch: the plan's `- Branch:` line names it, and `build` and `ship` find the lane from that line when the pattern finds none.
+- A session that may not push to the default branch: the scoping commit rides as the lane branch's first commit and reaches the default branch with the pull request, which `scope` says, and which is safe only while no other lane is open.
+- Reading the last run before a step (`CI: on`): a run cancelled by a later push is superseded, not failed; a run still going is left to the next step; no run because the pull request conflicts means merging the default branch in first; a run that cannot be read is said in the commit body and caught at the ship.
+- A flake is the repository's step check's word, not the plugin's: what it calls one goes in `Flakes:` and is not a failure.
+- `ship`: a tag that already exists stops the ship (a tag is never moved, nothing is ever forced); with a forge the merge commit is fetched and its second parent checked against the lane's head before it is tagged; the annotation is written from a file, verbatim; the gate runs in the background with no timeout of its own.
+
 ## Sources
 
 - The review of the method's first two months (2026-11-26, three rounds), from which this document was distilled on 2026-11-27.
