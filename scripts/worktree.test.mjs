@@ -49,15 +49,21 @@ test('a worktree on another branch is refused; an existing branch is checked out
   assert.match(r.stderr, /is a worktree on other, not lane\/D5/);
 });
 
-test('a shipped lane’s worktree and branch are removed from the main checkout, never from inside', (t) => {
+test('a shipped lane’s worktree and branch are removed, from the main checkout or from inside the worktree', (t) => {
   const repo = ready(t, {});
   assert.equal(slipway(repo, ['worktree', 'D6']).code, 0);
   const wt = path.join(path.dirname(repo), 'shop-D6');
-  assert.match(slipway(wt, ['worktree', 'remove', 'D6']).stderr, /from the main checkout/);
-  const r = slipway(repo, ['worktree', 'remove', 'D6']);
+  let r = slipway(repo, ['worktree', 'remove', 'D6']);
   assert.equal(r.code, 0, r.stderr);
   assert.equal(existsSync(wt), false);
   assert.equal(git(repo, 'branch', '--list', 'lane/D6'), '');
+  // The session that shipped sits in the worktree; it removes it from there.
+  assert.equal(slipway(repo, ['worktree', 'D7']).code, 0);
+  const wt7 = path.join(path.dirname(repo), 'shop-D7');
+  r = slipway(wt7, ['worktree', 'remove', 'D7']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(existsSync(wt7), false);
+  assert.equal(git(repo, 'branch', '--list', 'lane/D7'), '');
 });
 
 test('a new lane branch starts from the default branch, not from the checkout it is made in', (t) => {

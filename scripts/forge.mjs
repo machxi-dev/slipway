@@ -164,6 +164,12 @@ function localMerge(root, config, branch) {
   if (!dir) throw usage(`no worktree has ${target} checked out; check it out in the main checkout first`);
   const status = git(dir, ['status', '--porcelain', '--untracked-files=no']);
   if (status.stdout.trim()) throw usage(`${dir} has uncommitted changes on ${target}`);
+  if (hasOrigin(dir)) {
+    // Bring the default branch up to origin's first, or the push after the merge is refused.
+    git(dir, ['fetch', '-q', 'origin', target]);
+    const ff = git(dir, ['merge', '--ff-only', '-q', `origin/${target}`]);
+    if (ff.status !== 0) throw new Error(`${target} in ${dir} has diverged from origin/${target}: ${(ff.stderr || ff.stdout).trim()}`);
+  }
   const m = git(dir, ['merge', '--no-ff', '-m', `Merge branch '${branch}'`, branch]);
   if (m.status !== 0) {
     git(dir, ['merge', '--abort']);
