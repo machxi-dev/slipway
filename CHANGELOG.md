@@ -2,6 +2,12 @@
 
 All notable changes to Slipway are recorded here. Versions follow [semver](https://semver.org); the version in `.claude-plugin/plugin.json` and the marketplace entry is what consumers pin.
 
+## Unreleased
+
+### Changed
+
+- `/slipway:ship` publishes a GitHub Release for a release tag under `forge: github`, its notes the version's changelog section (§4.5 step 8).
+
 ## 0.1.0 — 2026-11-27
 
 ### Added
