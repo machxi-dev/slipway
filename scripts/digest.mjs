@@ -86,7 +86,7 @@ export function renderDigests(root, config, template) {
 }
 
 /** Run the repository's formatter over files, when it names one (§3.3). */
-function format(root, config, files) {
+export function format(root, config, files) {
   if (!config.commands.format || !files.length) return;
   const r = spawnSync(`${config.commands.format} ${files.map((f) => quoteArg(f)).join(' ')}`, { cwd: root, shell: true, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
   if (r.status !== 0) throw new Error(`commands.format failed on the digests: ${r.stderr.trim()}`);

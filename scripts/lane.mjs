@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { laneBranch, laneFromBranch, laneWorktree } from './config.mjs';
 import { currentBranch, mainRoot } from './git.mjs';
+import { matches } from './glob.mjs';
 import { LEDGER_HEADER, SHIPPED_HEADER, readRows, removeRow, rowLine, setRow, shippedLine } from './ledger.mjs';
 import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord } from './plan.mjs';
 import { today } from './records.mjs';
@@ -60,6 +61,9 @@ const literalPrefix = (glob) => glob.replaceAll('\\', '/').split(/[*?[]/)[0];
 export function overlaps(a, b) {
   const pa = literalPrefix(a);
   const pb = literalPrefix(b);
+  // A glob with no literal prefix (`**/*.sql`) is tested against the other with its wildcards filled in.
+  const sample = (g) => g.replaceAll('\\', '/').replace(/\*\*\/?/g, '').replace(/[*?]/g, 'x');
+  if (!pa || !pb) return matches(a, sample(b)) || matches(b, sample(a));
   return pa.startsWith(pb) || pb.startsWith(pa);
 }
 
@@ -140,8 +144,11 @@ export function setStatus(root, config, n, status) {
   if (!row) throw usage(`no row D${n} in ${config.docs.plans}/README.md`);
   const planFile = path.join(f.dir, planName(n));
   const link = existsSync(planFile) ? planName(n) : row.link;
-  writeFileSync(f.readme, setRow(text, { n, title: row.title, status, link }));
-  if (existsSync(planFile)) writeFileSync(planFile, setHeader(readFileSync(planFile, 'utf8'), 'Status', status));
+  // Every new text is made before any file is written, so a failure leaves both as they were.
+  const ledger = setRow(text, { n, title: row.title, status, link });
+  const plan = existsSync(planFile) ? setHeader(readFileSync(planFile, 'utf8'), 'Status', status) : null;
+  writeFileSync(f.readme, ledger);
+  if (plan !== null) writeFileSync(planFile, plan);
 }
 
 /** Move a row to SHIPPED.md with its date and pull request, and mark the plan shipped (§4.5 step 4). */
@@ -150,10 +157,14 @@ export function shipRow(root, config, n, { pr = '', date = today() } = {}) {
   const text = readFileSync(f.readme, 'utf8');
   const row = readRows(text).find((r) => r.n === n);
   if (!row) throw usage(`no row D${n} in ${config.docs.plans}/README.md`);
-  writeFileSync(f.readme, removeRow(text, n));
-  writeFileSync(f.shipped, setRow(readFileSync(f.shipped, 'utf8'), { n, title: row.title, date, pr, link: row.link }, SHIPPED_HEADER, shippedLine));
+  if (!existsSync(f.shipped)) throw usage(`${config.docs.plans}/SHIPPED.md is missing; run slipway init`);
+  // Every new text is made before any file is written, so a failure never loses the row.
+  const shipped = setRow(readFileSync(f.shipped, 'utf8'), { n, title: row.title, date, pr, link: row.link }, SHIPPED_HEADER, shippedLine);
   const planFile = path.join(f.dir, planName(n));
-  if (existsSync(planFile)) writeFileSync(planFile, setHeader(readFileSync(planFile, 'utf8'), 'Status', `shipped ${date}`));
+  const plan = existsSync(planFile) ? setHeader(readFileSync(planFile, 'utf8'), 'Status', `shipped ${date}`) : null;
+  writeFileSync(f.shipped, shipped);
+  writeFileSync(f.readme, removeRow(text, n));
+  if (plan !== null) writeFileSync(planFile, plan);
 }
 
 export { LEDGER_HEADER, rowLine };

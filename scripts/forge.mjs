@@ -35,15 +35,26 @@ function worktreeOn(root, branch) {
   return null;
 }
 
-/** Classify the runs on one commit: green, red, running, cancelled or none. */
+/**
+ * Classify the runs on one commit: green, red, running, cancelled or none. Each workflow's newest run counts
+ * (a re-run supersedes the one before it); the commit is red when any workflow's is.
+ */
 export function runState(runs, sha) {
-  const mine = runs.filter((r) => r.headSha === sha);
+  const latest = new Map();
+  for (const r of runs.filter((x) => x.headSha === sha)) {
+    const key = r.workflowName ?? r.name ?? '';
+    if (!latest.has(key)) latest.set(key, r);
+  }
+  const mine = [...latest.values()];
   if (!mine.length) return { state: 'none' };
-  if (mine.some((r) => r.status !== 'completed')) return { state: 'running', run: mine.find((r) => r.status !== 'completed') };
-  const latest = mine[0];
-  if (latest.conclusion === 'success' || latest.conclusion === 'skipped' || latest.conclusion === 'neutral') return { state: 'green', run: latest };
-  if (latest.conclusion === 'cancelled') return { state: 'cancelled', run: latest };
-  return { state: 'red', run: latest };
+  const running = mine.find((r) => r.status !== 'completed');
+  if (running) return { state: 'running', run: running };
+  const passed = (r) => ['success', 'skipped', 'neutral'].includes(r.conclusion);
+  const red = mine.find((r) => !passed(r) && r.conclusion !== 'cancelled');
+  if (red) return { state: 'red', run: red };
+  const cancelled = mine.find((r) => r.conclusion === 'cancelled');
+  if (cancelled) return { state: 'cancelled', run: cancelled };
+  return { state: 'green', run: mine[0] };
 }
 
 /**
@@ -85,9 +96,14 @@ export async function forge(root, config, verb, opts = {}) {
     }
     case 'run': {
       if (none) return { code: 0, lines: ['off: forge none runs no CI'] };
-      const sha = opts.sha ?? remoteHead(root, branch);
+      let sha = opts.sha ?? remoteHead(root, branch);
       if (!sha) return { code: 3, lines: [`none: ${branch} is not on origin`] };
-      const args = ['run', 'list', '--commit', sha, '--json', 'databaseId,headSha,status,conclusion,url,createdAt', '--limit', '20'];
+      if (opts.sha) {
+        const full = git(root, ['rev-parse', '--verify', '-q', `${opts.sha}^{commit}`]);
+        if (full.status !== 0) throw usage(`--sha ${opts.sha}: not a commit git knows`);
+        sha = full.stdout.trim();
+      }
+      const args = ['run', 'list', '--commit', sha, '--json', 'databaseId,headSha,status,conclusion,url,createdAt,workflowName', '--limit', '50'];
       if (config.ci.workflow) args.push('--workflow', config.ci.workflow);
       const deadline = Date.now() + (opts.noneGraceMs ?? 180_000);
       for (;;) {

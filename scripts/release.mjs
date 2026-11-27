@@ -28,11 +28,12 @@ export function bumpVersion(version, part) {
   throw usage(`the part is one of ${RELEASE_PARTS.join(', ')}`);
 }
 
-/** Replace every occurrence of `from` as a version value in a file's text. */
+/** Replace the first `from` written as a version value in a file's text: the file's own, not a dependency's. */
 function replaceVersion(text, from, to) {
-  const json = new RegExp(`("version"\\s*:\\s*")${escape(from)}(")`, 'g');
-  const toml = new RegExp(`^(\\s*version\\s*=\\s*")${escape(from)}(")`, 'gm');
-  if (json.test(text) || toml.test(text)) return text.replace(json, `$1${to}$2`).replace(toml, `$1${to}$2`);
+  const json = new RegExp(`("version"\\s*:\\s*")${escape(from)}(")`);
+  const toml = new RegExp(`^(\\s*version\\s*=\\s*")${escape(from)}(")`, 'm');
+  if (json.test(text)) return text.replace(json, (m, a, b) => `${a}${to}${b}`);
+  if (toml.test(text)) return text.replace(toml, (m, a, b) => `${a}${to}${b}`);
   if (text.trim() === from) return text.replace(from, to);
   return null;
 }

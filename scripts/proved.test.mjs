@@ -96,3 +96,14 @@ test('each worktree keeps its own record', (t) => {
   assert.ok(existsSync(path.join(repo, '.git', 'slipway', 'proved.json')));
   assert.ok(!readFileSync(path.join(repo, '.git', 'slipway', 'proved.json'), 'utf8').includes('q.txt'));
 });
+
+test('a green step check in a repository with no commit yet succeeds and records nothing', (t) => {
+  const dir = path.join(path.dirname(tempRepo(t, 'x')), 'fresh');
+  execFileSync('git', ['init', '-q', '-b', 'main', dir]);
+  writeFileSync(path.join(dir, 'slipway.config.json'), JSON.stringify({ version: 1, tagPrefix: 'x', commands: { check: 'c', 'step-check': 'node changed.mjs', gate: 'g' } }));
+  writeFileSync(path.join(dir, 'changed.mjs'), CHANGED);
+  const r = run(dir);
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.changed, ['changed.mjs', 'slipway.config.json']);
+  assert.equal(existsSync(path.join(dir, '.git', 'slipway', 'proved.json')), false);
+});

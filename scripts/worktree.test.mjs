@@ -59,3 +59,12 @@ test('a shipped lane’s worktree and branch are removed from the main checkout,
   assert.equal(existsSync(wt), false);
   assert.equal(git(repo, 'branch', '--list', 'lane/D6'), '');
 });
+
+test('a new lane branch starts from the default branch, not from the checkout it is made in', (t) => {
+  const repo = ready(t, {});
+  git(repo, 'checkout', '-q', '-b', 'lane/D5');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'D5 work');
+  assert.equal(slipway(repo, ['worktree', 'D6']).code, 0);
+  const wt = path.join(path.dirname(repo), 'shop-D6');
+  assert.equal(git(wt, 'rev-parse', 'HEAD'), git(repo, 'rev-parse', 'main'));
+});

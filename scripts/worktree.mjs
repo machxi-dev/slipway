@@ -30,7 +30,11 @@ export function makeWorktree(root, config, arg, { pluginRoot, log = () => {} } =
   let args;
   if (ok(main, ['show-ref', '--verify', '-q', `refs/heads/${lane.branch}`])) args = [dir, lane.branch];
   else if (ok(main, ['show-ref', '--verify', '-q', `refs/remotes/origin/${lane.branch}`])) args = ['-b', lane.branch, dir, `origin/${lane.branch}`];
-  else args = ['-b', lane.branch, dir, 'HEAD'];
+  else {
+    // A new lane starts from the default branch, never from whatever this checkout has.
+    const from = ok(main, ['show-ref', '--verify', '-q', `refs/remotes/origin/${config.defaultBranch}`]) ? `origin/${config.defaultBranch}` : config.defaultBranch;
+    args = ['-b', lane.branch, '--no-track', dir, from];
+  }
   const r = git(root, ['worktree', 'add', '-q', ...args]);
   if (r.status !== 0) throw new Error(`git worktree add: ${r.stderr.trim()}`);
   out.created = true;

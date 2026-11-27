@@ -143,3 +143,13 @@ test('budgets: a path beats a glob, the lower of two globs holds, a path naming 
     'notes/a.md: 50 bytes, over its ceiling of 40 in slipway.budget.json',
   ]);
 });
+
+test('with commands.format, the digests init writes are already formatted, so the first docs-check passes', (t) => {
+  const repo = tempRepo(t);
+  write(repo, 'fmt.mjs', "import { appendFileSync } from 'node:fs';\nfor (const f of process.argv.slice(2)) appendFileSync(f, '<!-- formatted -->\\n');\n");
+  write(repo, 'slipway.config.json', JSON.stringify({ version: 1, tagPrefix: 'x', commands: { check: 'c', 'step-check': 's', gate: 'g', format: 'node fmt.mjs' } }));
+  assert.equal(slipway(repo, ['init']).code, 0);
+  assert.match(read(repo, 'docs/rules/general.md'), /<!-- formatted -->\n$/);
+  const r = check(repo);
+  assert.equal(r.code, 0, r.problems.join('\n'));
+});

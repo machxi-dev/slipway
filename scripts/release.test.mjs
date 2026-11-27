@@ -23,12 +23,16 @@ test("`slipway release bump` moves the version in every file the release block n
   writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(FIXTURE));
   mkdirSync(path.join(repo, '.claude-plugin'));
   writeFileSync(path.join(repo, '.claude-plugin/plugin.json'), '{\n  "name": "slipway",\n  "version": "0.1.0"\n}\n');
-  writeFileSync(path.join(repo, '.claude-plugin/marketplace.json'), '{ "plugins": [ { "name": "slipway", "version": "0.1.0" } ] }\n');
+  writeFileSync(path.join(repo, '.claude-plugin/marketplace.json'), '{ "plugins": [ { "name": "slipway", "version": "0.1.0" }, { "name": "other", "version": "0.1.0" } ] }\n');
   const r = slipway(repo, ['release', 'bump', 'minor']);
   assert.equal(r.code, 0, r.stderr);
   assert.match(r.stdout, /^0\.1\.0 -> 0\.2\.0; tag v0\.2\.0$/m);
   assert.equal(readFileSync(path.join(repo, '.claude-plugin/plugin.json'), 'utf8'), '{\n  "name": "slipway",\n  "version": "0.2.0"\n}\n');
-  assert.match(readFileSync(path.join(repo, '.claude-plugin/marketplace.json'), 'utf8'), /"version": "0\.2\.0"/);
+  assert.equal(
+    readFileSync(path.join(repo, '.claude-plugin/marketplace.json'), 'utf8'),
+    '{ "plugins": [ { "name": "slipway", "version": "0.2.0" }, { "name": "other", "version": "0.1.0" } ] }\n',
+    'only the first version in a file is the project’s own',
+  );
 });
 
 test('`slipway tag` tags the merge commit whose second parent is the lane head, and never moves a tag (§14)', (t) => {

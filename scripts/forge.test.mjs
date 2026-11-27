@@ -27,6 +27,10 @@ test('runs on one commit are classed green, red, running, cancelled or none', ()
   assert.equal(runState([run('a', 'completed', 'success')], 'a').state, 'green');
   assert.equal(runState([run('a', 'completed', 'failure')], 'a').state, 'red');
   assert.equal(runState([run('a', 'completed', 'cancelled')], 'a').state, 'cancelled');
+  // Each workflow's newest run counts, and any red one makes the commit red.
+  const wf = (name, conclusion) => ({ ...run('a', 'completed', conclusion), workflowName: name });
+  assert.equal(runState([wf('test', 'success'), wf('lint', 'failure')], 'a').state, 'red');
+  assert.equal(runState([wf('test', 'success'), wf('test', 'failure')], 'a').state, 'green', 'a re-run supersedes');
 });
 
 test('forge none: no pull request or CI, and the merge is a local --no-ff merge pushed to origin (§3.3)', (t) => {
@@ -70,7 +74,7 @@ else if (args[0] === 'run' && args[1] === 'view') console.log('the failing log')
   let r = slipway(repo, ['forge', 'pr-open', '--title', 'D2 — Things', '--body-file', '../body.md'], { env });
   assert.equal(r.stdout.trim(), 'https://github.com/o/r/pull/9', r.stderr);
   const calls = readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-  assert.deepEqual(calls.at(-1), ['pr', 'create', '--draft', '--base', 'main', '--head', 'lane/D2', '--title', 'D2 — Things', '--body-file', '../body.md']);
+  assert.deepEqual(calls.at(-1), ['pr', 'create', '--draft', '--base', 'main', '--head', 'lane/D2', '--title', 'D2 — Things', '--body-file', path.resolve(repo, '../body.md')]);
   r = slipway(repo, ['forge', 'pr-open', '--title', 'x', '--body-file', 'y'], { env: { ...env, FAKE_OPEN: '[{"url":"https://github.com/o/r/pull/8"}]' } });
   assert.equal(r.stdout.trim(), 'https://github.com/o/r/pull/8');
   r = slipway(repo, ['forge', 'run', '--log'], { env });

@@ -55,6 +55,8 @@ test('`slipway adr accept` flips the record and supersedes its parents, in the f
   const r = slipway(repo, ['adr', 'new', 'Queue, durable', '--supersedes', '2']);
   assert.equal(r.code, 0, r.stderr);
   assert.match(read(repo, 'docs/adr/0003-queue-durable.md'), /^- Supersedes: \[0002\]\(0002-queue\.md\)$/m);
+  slipway(repo, ['adr', 'new', 'Twice', '--supersedes', '2', '--supersedes', '3']);
+  assert.match(read(repo, 'docs/adr/0004-twice.md'), /^- Supersedes: \[0002\]\(0002-queue\.md\), \[0003\]\(0003-queue-durable\.md\)$/m);
   const a = slipway(repo, ['adr', 'accept', 'ADR-0003']);
   assert.equal(a.code, 0, a.stderr);
   assert.deepEqual(a.stdout.trim().split('\n'), ['docs/adr/0003-queue-durable.md', 'docs/adr/0002-queue.md', 'docs/adr/README.md']);
@@ -63,7 +65,7 @@ test('`slipway adr accept` flips the record and supersedes its parents, in the f
   assert.match(index, /\| \[0002\]\(0002-queue\.md\) \| Queue \| superseded \|/);
   assert.match(index, /\| \[0003\]\(0003-queue-durable\.md\) \| Queue, durable \| accepted \|/);
   assert.match(slipway(repo, ['adr', 'accept', '3']).stderr, /is accepted, not proposed/);
-  assert.equal(listRecords(path.join(repo, 'docs/adr')).length, 3);
+  assert.equal(listRecords(path.join(repo, 'docs/adr')).length, 4);
 });
 
 test('accepting a record whose parent is missing or already superseded is refused, and changes nothing', (t) => {

@@ -62,17 +62,21 @@ function needRepo(cwd) {
 }
 
 /** Split args into options and the rest. `values` take one argument; `flags` take none. */
-function options(args, { values = [], flags = [] } = {}) {
+function options(args, { values = [], flags = [], many = [] } = {}) {
   const opts = {};
   const rest = [];
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const eq = a.indexOf('=');
     const name = a.startsWith('--') ? (eq > 0 ? a.slice(2, eq) : a.slice(2)) : null;
-    if (name !== null && values.includes(name)) {
-      if (eq > 0) opts[name] = a.slice(eq + 1);
-      else if (i + 1 < args.length) opts[name] = args[++i];
+    if (name !== null && (values.includes(name) || many.includes(name))) {
+      let v;
+      if (eq > 0) v = a.slice(eq + 1);
+      else if (i + 1 < args.length) v = args[++i];
       else throw new UsageError(`--${name} needs a value`);
+      if (many.includes(name)) (opts[name] ??= []).push(v);
+      else if (name in opts) throw new UsageError(`--${name} is given twice`);
+      else opts[name] = v;
     } else if (name !== null && flags.includes(name)) opts[name] = true;
     else if (name !== null) throw new UsageError(`unknown option ${a}`);
     else rest.push(a);
@@ -115,9 +119,9 @@ const verbs = {
     const rel = (f) => path.posix.join(config.docs.records, f);
     const [sub, ...more] = args;
     if (sub === 'new') {
-      const { opts, rest } = options(more, { values: ['supersedes'] });
+      const { opts, rest } = options(more, { many: ['supersedes'] });
       const template = readFileSync(path.join(pluginRoot, 'templates', 'record.md'), 'utf8');
-      const supersedes = (opts.supersedes ?? '').split(',').filter(Boolean);
+      const supersedes = (opts.supersedes ?? []).flatMap((s) => s.split(',')).filter(Boolean);
       const r = newRecord(dir, template, { title: rest.join(' '), supersedes });
       out(rel(r.file));
       return 0;
@@ -231,7 +235,8 @@ const verbs = {
     const { root, config } = setup(cwd);
     const [verb, ...more] = args;
     const { opts } = options(more, { values: ['title', 'body-file', 'sha'], flags: ['wait', 'log'] });
-    const r = await forge(root, config, verb, { title: opts.title, bodyFile: opts['body-file'], sha: opts.sha, wait: opts.wait, log: opts.log });
+    const bodyFile = opts['body-file'] && path.resolve(cwd, opts['body-file']);
+    const r = await forge(root, config, verb, { title: opts.title, bodyFile, sha: opts.sha, wait: opts.wait, log: opts.log });
     for (const l of r.lines) out(l);
     return r.code;
   },

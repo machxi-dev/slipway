@@ -21,6 +21,9 @@ test('globs overlap when one literal prefix starts the other; skills come from t
   const config = { areas: { api: { paths: ['apps/api/**'], skills: ['api-conventions'] }, web: { paths: ['apps/web/**'], skills: ['web', 'api-conventions'] } } };
   assert.deepEqual(skillsFor(config, '`apps/web/x/**`, apps/api/y.ts'), ['api-conventions', 'web']);
   assert.deepEqual(skillsFor(config, 'docs/**'), []);
+  const sql = { areas: { sql: { paths: ['**/*.sql'], skills: ['sql-conventions'] } } };
+  assert.deepEqual(skillsFor(sql, 'src/ui/button.tsx'), []);
+  assert.deepEqual(skillsFor(sql, 'db/migrations/**/*.sql'), ['sql-conventions']);
 });
 
 test('the lane comes from the branch, else from a plan whose Branch line names it (§14)', (t) => {
@@ -81,4 +84,13 @@ test('scope warns when an open lane names the same record, or both add migration
     'D6 and D4 (in progress) both name 0003-money.md, 0005-queue.md',
     'D6 and D4 (in progress) both add migrations',
   ]);
+});
+
+test('a row is never lost when SHIPPED.md cannot take it', (t) => {
+  const repo = ready(t);
+  slipway(repo, ['ledger', 'add', 'Refunds']);
+  writeFileSync(path.join(repo, 'docs/plan/SHIPPED.md'), '# Shipped, by hand\n');
+  const r = slipway(repo, ['ledger', 'ship', 'D1']);
+  assert.equal(r.code, 1);
+  assert.match(read(repo, 'docs/plan/README.md'), /\| D1 \| Refunds \| planned \|/);
 });

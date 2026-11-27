@@ -88,7 +88,9 @@ export function stepBase(root, config, { base } = {}) {
 
 /** Record a green run: the head and the tree it proved, in this worktree's git directory. */
 export function recordGreen(root, tree) {
-  const head = must(root, ['rev-parse', 'HEAD']);
+  const r = git(root, ['rev-parse', '--verify', '-q', 'HEAD']);
+  if (!r.ok) return; // no commit yet: nothing to be an ancestor of, so nothing to record
+  const head = r.out;
   mkdirSync(stateDir(root), { recursive: true });
   writeFileSync(recordFile(root), `${JSON.stringify({ head, tree, at: new Date().toISOString() })}\n`);
 }
