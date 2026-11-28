@@ -18,6 +18,7 @@
   "merge": "merge-commit",
   "release": {
     "tag": "v{version}",
+    "title": "Slipway v{version}",
     "versionFile": ".claude-plugin/plugin.json",
     "also": [".claude-plugin/marketplace.json"]
   },

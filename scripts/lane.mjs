@@ -2,11 +2,11 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { laneBranch, laneFromBranch, laneWorktree } from './config.mjs';
-import { currentBranch, mainRoot } from './git.mjs';
+import { changedFiles, currentBranch, listFiles, mainRoot, remoteBranches, showFile } from './git.mjs';
 import { matches } from './glob.mjs';
 import { format } from './digest.mjs';
 import { LEDGER_HEADER, SHIPPED_HEADER, conflictsOutside, ledgerRows, readRows, renderLedger, roadmapEntries, rowLine, sameRows, setRow, shippedLine } from './ledger.mjs';
-import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord, stepText } from './plan.mjs';
+import { decisionsName, linkedRecords, listPlans, parseDecisions, parsePlan, planName, setHeader, statusWord } from './plan.mjs';
 import { today } from './records.mjs';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
@@ -92,16 +92,31 @@ export function skillFile(root, name) {
   return existsSync(path.join(root, file)) ? file : null;
 }
 
+/** A plan's `## Constraints` section, heading included and comments out, or [] when it has none or it is empty. */
+export function constraintLines(plan) {
+  const start = plan.lines.findIndex((l) => /^## Constraints\s*$/i.test(l));
+  if (start < 0) return [];
+  const end = plan.lines.findIndex((l, i) => i > start && l.startsWith('## '));
+  const body = plan.lines.slice(start + 1, end < 0 ? plan.lines.length : end).join('\n').replace(/<!--[\s\S]*?-->/g, '').trim();
+  return body ? [plan.lines[start], '', ...body.split('\n')] : [];
+}
+
 /**
- * What `slipway lane --step <k>` prints for the builder (§4.4): the plan's header and the step's section, the lane
- * branch, the decisions file, and each conventions skill with its SKILL.md path, which the builder reads, or that
- * the repository does not keep it, from the checkout the lane was found in. Returns
+ * What `slipway lane --step <k>` prints for the builder (§4.4): the plan's header, its constraints and the step's
+ * section, the lane branch, the decisions file, and each conventions skill with its SKILL.md path, which the builder
+ * reads, or that the repository does not keep it, from the checkout the lane was found in. Returns
  * { text, step, skills: [{ name, file | null }] }, or null with no such step.
  */
 export function stepBrief(config, lane, k) {
-  const text = stepText(lane.plan, k);
-  if (!text) return null;
-  const step = lane.plan.steps.find((s) => s.k === k);
+  const { plan } = lane;
+  const step = plan.steps.find((s) => s.k === k);
+  if (!step) return null;
+  const head = plan.lines.slice(0, plan.lines.findIndex((l) => l.startsWith('## ')));
+  const constraints = constraintLines(plan);
+  const text = [...head, ...(constraints.length ? [...constraints, ''] : []), ...plan.lines.slice(step.start, step.end)]
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trimEnd();
   const skills = skillsFor(config, step.fields.Paths ?? '').map((name) => ({ name, file: skillFile(lane.root, name) }));
   const lines = [
     text,
@@ -114,12 +129,57 @@ export function stepBrief(config, lane, k) {
   return { text: lines.join('\n'), step, skills };
 }
 
-/** §4.2: a new or open plan naming a record another open plan names, or two open plans adding migrations. */
+const plansPath = (config) => posix(path.normalize(config.docs.plans));
+const planNumbers = (files) => files.map((f) => /^D(\d+)\.md$/.exec(f)).filter(Boolean).map((m) => Number(m[1]));
+
+/**
+ * The lane branches on origin, fetched first: [{ ref, n, patterned }]. None when there is no origin (§4.1: a planned
+ * or open row reaches the default branch only with its lane). A branch the lane.branch pattern matches is lane n's;
+ * any other is a lane where a plan it adds or changes since the default branch names it in `- Branch:` (§14), as
+ * findLane reads a checkout.
+ */
+export function remoteLanes(root, config) {
+  const dir = plansPath(config);
+  const base = `refs/remotes/origin/${config.defaultBranch}`;
+  const lanes = [];
+  for (const branch of remoteBranches(root)) {
+    if (branch === 'HEAD' || branch === config.defaultBranch) continue;
+    const ref = `refs/remotes/origin/${branch}`;
+    const n = laneFromBranch(config, branch)?.n;
+    if (n !== undefined) {
+      lanes.push({ ref, n, patterned: true });
+      continue;
+    }
+    for (const m of planNumbers(changedFiles(root, base, ref, dir) ?? listFiles(root, ref, dir))) {
+      const text = showFile(root, ref, `${dir}/${planName(m)}`);
+      if (text !== null && branchOf(parsePlan(text)) === branch) lanes.push({ ref, n: m, patterned: false });
+    }
+  }
+  return lanes;
+}
+
+/** The plan a lane branch on origin holds for its own lane, as { n, plan }, or null. */
+function remotePlan(root, config, lane) {
+  const text = showFile(root, lane.ref, `${plansPath(config)}/${planName(lane.n)}`);
+  return text === null ? null : { n: lane.n, file: planName(lane.n), plan: parsePlan(text), ref: lane.ref };
+}
+
+/**
+ * §4.2: a new or open plan naming a record another open plan names, or two open plans adding migrations. The open
+ * plans are the checked-out tree's and each remote lane branch's own; a plan found in both places counts once.
+ */
 export function overlapWarnings(root, config, n) {
   const plans = listPlans(path.join(root, config.docs.plans));
   const mine = plans.find((p) => p.n === n);
   if (!mine) throw usage(`no plan D${n}`);
-  const open = plans.filter((p) => p.n !== n && statusWord(p.plan.header.Status) === 'in progress');
+  const isOpen = (p) => p.n !== n && statusWord(p.plan.header.Status) === 'in progress';
+  const open = plans.filter(isOpen);
+  for (const lane of remoteLanes(root, config)) {
+    if (open.some((p) => p.n === lane.n)) continue;
+    const p = remotePlan(root, config, lane);
+    if (p && isOpen(p)) open.push(p);
+  }
+  open.sort((a, b) => a.n - b.n);
   const warnings = [];
   const myRecords = linkedRecords(mine.plan.header.Records);
   for (const o of open) {
@@ -139,15 +199,25 @@ const ledgerFiles = (root, config) => {
 };
 const readIf = (f) => (existsSync(f) ? readFileSync(f, 'utf8') : '');
 
-/** The number after every deliverable the ledger, the shipped rows, the roadmap and the plans name. */
+const roadmapNumbers = (text) => [...text.matchAll(/\bD(\d+)\b/g)].map((m) => Number(m[1]));
+
+/**
+ * The number after every deliverable the ledger, the shipped rows, the roadmap and the plans name, in the
+ * checked-out tree and on each lane branch on origin: a row planned or scoped there is not on the default branch yet.
+ * A branch the pattern does not match gives its own plan's number and its roadmap's, not the plans it carries.
+ */
 export function nextDeliverable(root, config) {
   const f = ledgerFiles(root, config);
   const nums = [
     ...readRows(readIf(f.readme)).map((r) => r.n),
     ...readRows(readIf(f.shipped), SHIPPED_HEADER).map((r) => r.n),
-    ...[...readIf(f.roadmap).matchAll(/\bD(\d+)\b/g)].map((m) => Number(m[1])),
+    ...roadmapNumbers(readIf(f.roadmap)),
     ...listPlans(f.dir).map((p) => p.n),
   ];
+  const dir = plansPath(config);
+  for (const lane of remoteLanes(root, config)) {
+    nums.push(lane.n, ...(lane.patterned ? planNumbers(listFiles(root, lane.ref, dir)) : []), ...roadmapNumbers(showFile(root, lane.ref, `${dir}/ROADMAP.md`) ?? ''));
+  }
   return Math.max(0, ...nums) + 1;
 }
 

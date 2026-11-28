@@ -1,10 +1,12 @@
 // `slipway forge <verb>`: the forge adapter, `github` through `gh` and `none` locally (docs/design.md §3.3, §4.5, §4.6).
 // The verbs: pr-open, pr, comment, comments, ready, merge (the pull request), and run (the last CI run on a commit).
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { currentBranch } from './git.mjs';
+import { parsePlan } from './plan.mjs';
 
 const usage = (message) => Object.assign(new Error(message), { code: 'EUSAGE' });
 const git = (cwd, args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -58,6 +60,34 @@ function worktreeOn(root, branch) {
 }
 
 /**
+ * A lane's pull request from its plan: the title `D<n> — <title>`, and a body of the plan's goal (the prose
+ * between its header lines and its first section), its step titles and its CI line, with the plan's path.
+ */
+export function prFromPlan(root, planFile) {
+  const plan = parsePlan(readFileSync(planFile, 'utf8'));
+  const end = plan.lines.findIndex((l) => l.startsWith('## '));
+  const headerLines = new Set(Object.values(plan.headerLines));
+  const h1 = plan.lines.findIndex((l) => l.startsWith('# '));
+  const goal = plan.lines
+    .slice(h1 + 1, end < 0 ? plan.lines.length : end)
+    .filter((l, i) => !headerLines.has(h1 + 1 + i))
+    .join('\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const rel = path.relative(root, path.resolve(planFile)).replaceAll('\\', '/');
+  const body = [
+    goal,
+    '## Steps',
+    plan.steps.map((s) => `${s.k}. ${s.title}`).join('\n'),
+    `Plan: \`${rel}\` · CI: \`${plan.header.CI ?? '?'}\``,
+  ].filter(Boolean);
+  const name = plan.n === null ? plan.title : `D${plan.n} — ${plan.title}`;
+  return { title: name, body: `${body.join('\n\n')}\n` };
+}
+
+/**
  * Classify the runs on one commit: green, red, running, cancelled or none. Each workflow's newest run counts
  * (a re-run supersedes the one before it); the commit is red when any workflow's is.
  */
@@ -80,7 +110,7 @@ export function runState(runs, sha) {
 }
 
 /**
- * Run one verb. `opts`: title, bodyFile, sha, wait, log. Resolves to { code, lines } — lines to print.
+ * Run one verb. `opts`: plan, title, bodyFile, sha, wait, log, branch. Resolves to { code, lines } — lines to print.
  */
 export async function forge(root, config, verb, opts = {}) {
   const branch = opts.branch ?? currentBranch(root);
@@ -88,8 +118,14 @@ export async function forge(root, config, verb, opts = {}) {
   const lines = [];
   switch (verb) {
     case 'pr-open': {
+      if (opts.bodyFile) throw usage('pr-open takes no --body-file: the body is built from --plan');
       if (none) return { code: 0, lines: ['forge none: no pull request; the lane is its branch'] };
-      if (!opts.title || !opts.bodyFile) throw usage('pr-open needs --title and --body-file');
+      if (!opts.plan) throw usage('pr-open needs --plan <the lane plan>; the body is built from it');
+      if (!existsSync(opts.plan)) throw usage(`--plan ${opts.plan}: no such file`);
+      const inside = path.relative(root, path.resolve(opts.plan));
+      if (inside === '..' || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) throw usage(`--plan ${opts.plan}: not in this repository`);
+      const pr = prFromPlan(root, opts.plan);
+      const title = opts.title ?? pr.title;
       const open = JSON.parse(gh(root, ['pr', 'list', '--head', branch, '--state', 'open', '--json', 'url', '--limit', '1']) || '[]');
       if (open.length) return { code: 0, lines: [open[0].url] };
       // A lane just opened has no commit of its own, and a forge refuses a pull request with nothing in it:
@@ -101,8 +137,15 @@ export async function forge(root, config, verb, opts = {}) {
       if (ahead.status === 0 && ahead.stdout.trim() === '0') {
         return { code: 0, lines: [`no commits on ${branch} beyond ${config.defaultBranch} yet: the pull request opens with the first step`] };
       }
-      const url = gh(root, ['pr', 'create', '--draft', '--base', config.defaultBranch, '--head', branch, '--title', opts.title, '--body-file', opts.bodyFile]);
-      return { code: 0, lines: [url.split('\n').at(-1)] };
+      const dir = mkdtempSync(path.join(tmpdir(), 'slipway-pr-'));
+      try {
+        const body = path.join(dir, 'body.md');
+        writeFileSync(body, pr.body);
+        const url = gh(root, ['pr', 'create', '--draft', '--base', config.defaultBranch, '--head', branch, '--title', title, '--body-file', body]);
+        return { code: 0, lines: [url.split('\n').at(-1)] };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     }
     case 'pr': {
       if (none) return { code: 0, lines: ['forge none: no pull request'] };
@@ -163,7 +206,7 @@ export async function forge(root, config, verb, opts = {}) {
       }
     }
     default:
-      throw usage('slipway forge pr-open --title <t> --body-file <f> | pr | comment --body-file <f> | comments | ready | merge | run [--sha <sha>] [--wait] [--log]');
+      throw usage('slipway forge pr-open --plan <plan> [--title <t>] | pr | comment --body-file <f> | comments | ready | merge | run [--sha <sha>] [--wait] [--log]');
   }
 }
 

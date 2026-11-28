@@ -35,6 +35,61 @@ test("`slipway release bump` moves the version in every file the release block n
   );
 });
 
+const CHANGES = '# Changelog\n\nIntro.\n\n## Unreleased\n\n### Added\n\n- Notes.\n\n## 0.1.0 — 2026-01-01\n\n### Added\n\n- The start.\n';
+
+function releaseRepo(t, { changelog = CHANGES } = {}) {
+  const repo = tempRepo(t);
+  writeFileSync(path.join(repo, 'slipway.config.json'), JSON.stringify(FIXTURE));
+  mkdirSync(path.join(repo, '.claude-plugin'));
+  writeFileSync(path.join(repo, '.claude-plugin/plugin.json'), '{ "version": "0.1.0" }\n');
+  writeFileSync(path.join(repo, '.claude-plugin/marketplace.json'), '{ "plugins": [ { "version": "0.1.0" } ] }\n');
+  if (changelog !== null) writeFileSync(path.join(repo, 'CHANGELOG.md'), changelog);
+  return repo;
+}
+
+test("release bump renames the changelog's Unreleased heading to the version and date", (t) => {
+  const repo = releaseRepo(t);
+  const r = slipway(repo, ['release', 'bump', 'minor', '--date', '2026-11-28']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /^updated CHANGELOG\.md$/m, 'the changelog is among the files it wrote');
+  assert.equal(readFileSync(path.join(repo, 'CHANGELOG.md'), 'utf8'), CHANGES.replace('## Unreleased', '## 0.2.0 — 2026-11-28'));
+  // A changelog with no Unreleased heading is refused, and nothing is written.
+  const again = slipway(repo, ['release', 'bump', 'patch']);
+  assert.equal(again.code, 2);
+  assert.match(again.stderr, /CHANGELOG\.md has no "## Unreleased" heading for 0\.2\.1/);
+  assert.equal(readFileSync(path.join(repo, '.claude-plugin/plugin.json'), 'utf8'), '{ "version": "0.2.0" }\n');
+  // A CRLF changelog keeps its line ends; no changelog at all is not one to rename.
+  const crlf = releaseRepo(t, { changelog: CHANGES.replaceAll('\n', '\r\n') });
+  assert.equal(slipway(crlf, ['release', 'bump', 'patch', '--date', '2026-11-28']).code, 0);
+  assert.match(readFileSync(path.join(crlf, 'CHANGELOG.md'), 'utf8'), /\r\n## 0\.1\.1 — 2026-11-28\r\n/);
+  // Keep a Changelog's bracketed headings keep their brackets, and the notes find them.
+  const kac = releaseRepo(t, { changelog: '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- Brackets.\n\n## [0.1.0] - 2026-01-01\n\n- Start.\n' });
+  assert.equal(slipway(kac, ['release', 'bump', 'patch', '--date', '2026-11-28']).code, 0);
+  assert.match(readFileSync(path.join(kac, 'CHANGELOG.md'), 'utf8'), /\n## \[0\.1\.1\] - 2026-11-28\n\n### Added\n\n- Brackets\.\n\n## \[0\.1\.0\]/);
+  assert.equal(slipway(kac, ['release', 'notes']).stdout, 'Slipway v0.1.1\n\n### Added\n\n- Brackets.\n');
+  const bare = releaseRepo(t, { changelog: null });
+  const b = slipway(bare, ['release', 'bump', 'patch']);
+  assert.equal(b.code, 0, b.stderr);
+  assert.doesNotMatch(b.stdout, /CHANGELOG/);
+});
+
+test("release notes writes the version's changelog section to a file", (t) => {
+  const repo = releaseRepo(t);
+  assert.equal(slipway(repo, ['release', 'bump', 'minor', '--date', '2026-11-28']).code, 0);
+  const out = path.join(path.dirname(repo), 'notes.md');
+  const r = slipway(repo, ['release', 'notes', '--out', '../notes.md']);
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(r.stdout.split('\n')[0], 'Slipway v0.2.0', 'the release title comes first');
+  assert.equal(readFileSync(out, 'utf8'), '### Added\n\n- Notes.\n');
+  const shown = slipway(repo, ['release', 'notes']);
+  assert.equal(shown.stdout, 'Slipway v0.2.0\n\n### Added\n\n- Notes.\n');
+  // Unreleased notes are not the version's: before the bump there is no section for it.
+  const before = releaseRepo(t, { changelog: '# Changelog\n\n## Unreleased\n\n- Notes.\n' });
+  assert.match(slipway(before, ['release', 'notes']).stderr, /CHANGELOG\.md has no "## 0\.1\.0" section/);
+  const bare = releaseRepo(t, { changelog: null });
+  assert.equal(slipway(bare, ['release', 'notes']).stdout, 'Slipway v0.1.0\nno CHANGELOG.md: the release takes generated notes\n');
+});
+
 test('`slipway tag` tags the merge commit whose second parent is the lane head, and never moves a tag (§14)', (t) => {
   const repo = tempRepo(t);
   assert.equal(slipway(repo, ['init', '--check', 'x', '--tag-prefix', 'shop']).code, 0);

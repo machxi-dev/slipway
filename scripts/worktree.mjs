@@ -3,8 +3,9 @@ import { copyFileSync, existsSync, mkdirSync, realpathSync, rmdirSync, rmSync } 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { laneWorktree } from './config.mjs';
-import { mainRoot } from './git.mjs';
-import { findLane } from './lane.mjs';
+import { mainRoot, showFile } from './git.mjs';
+import { branchOf, findLane, parseLaneArg } from './lane.mjs';
+import { parsePlan, planName } from './plan.mjs';
 import { localComments } from './forge.mjs';
 import { slipwayEnv } from './run.mjs';
 
@@ -78,14 +79,55 @@ export function makeWorktree(root, config, arg, { pluginRoot, log = () => {} } =
   return out;
 }
 
-/** Remove a shipped lane's worktree and branch (§4.5 step 9). Refuses a worktree with changes. */
-export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
+/** The worktree that has `branch` checked out, or null; an entry whose folder is gone (prunable) is none. */
+function worktreeOn(main, branch) {
+  const out = git(main, ['worktree', 'list', '--porcelain']).stdout ?? '';
+  let dir = null;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) dir = line.slice(9);
+    else if (line === `branch refs/heads/${branch}` && existsSync(dir)) return dir;
+  }
+  return null;
+}
+
+/**
+ * Bring the local default branch up to origin's (§4.5 step 9, §14): a fast-forward pull where a checkout has it,
+ * a fetch into the branch where none does. Throws, before anything is removed, when it cannot.
+ */
+function updateDefault(main, config, log) {
+  if (!ok(main, ['remote', 'get-url', 'origin'])) return;
+  const target = config.defaultBranch;
+  const at = worktreeOn(main, target);
+  const args = at ? ['pull', '--ff-only', '-q', 'origin', target] : ['fetch', '-q', 'origin', `${target}:${target}`];
+  const r = git(at ?? main, args);
+  if (r.status !== 0) throw new Error(`git ${args.join(' ')}: ${(r.stderr || r.stdout || r.error?.message || '').trim()}; nothing was removed`);
+  log(at ? `pulled ${target} in ${at}` : `updated ${target} from origin`);
+}
+
+/**
+ * The lane's branch, from its plan's `- Branch:` line: the worktree's plan while git still has the worktree, else this
+ * checkout's, else the default branch's, which has the plan once the lane is merged and pulled; the lane.branch
+ * pattern only where no plan is found. Run from a main checkout on another branch, the plan is on neither.
+ */
+function laneBranchOf(root, main, dir, config, arg) {
+  if (registered(main, dir)) return findLane(dir, config, arg).branch;
   const lane = findLane(root, config, arg);
+  if (lane.plan) return lane.branch;
+  const file = path.posix.join(config.docs.plans.replaceAll('\\', '/'), planName(lane.n));
+  const text = showFile(main, config.defaultBranch, file);
+  return (text && branchOf(parsePlan(text))) || lane.branch;
+}
+
+/** Bring the default branch up to date, then remove a shipped lane's worktree and branch (§4.5 step 9). Refuses a worktree with changes. */
+export function removeWorktree(root, config, arg, { log = () => {} } = {}) {
+  const { n } = parseLaneArg(arg);
   const main = mainRoot(root);
-  const dir = laneWorktree(config, main, lane.n);
+  const dir = laneWorktree(config, main, n);
   // A session that shipped from the lane's worktree removes it from there: git works from the main checkout,
   // and this process leaves the directory first. A shell still inside it (on Windows) can hold it open.
   if (path.resolve(root) === path.resolve(dir)) process.chdir(main);
+  updateDefault(main, config, log);
+  const lane = { n, branch: laneBranchOf(root, main, dir, config, arg) };
   if (existsSync(dir)) {
     if (registered(main, dir)) {
       const r = git(main, ['worktree', 'remove', dir]);

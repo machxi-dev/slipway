@@ -10,7 +10,7 @@ const SKILLS = ['plan', 'scope', 'build', 'ship', 'adr', 'init'];
 // past its ceiling raises it here, in the same diff, on purpose.
 const CEILINGS = {
   'skills/plan/SKILL.md': 3072,
-  'skills/scope/SKILL.md': 6144,
+  'skills/scope/SKILL.md': 6656, // raised in D3.1: branch-first scope reads rows on the lane branches too
   'skills/build/SKILL.md': 5632,
   'skills/ship/SKILL.md': 6144,
   'skills/adr/SKILL.md': 4608,
@@ -140,7 +140,7 @@ test('shellProblems names what makes a command more than one plain command (D2)'
   for (const [code, want] of cases) assert.deepEqual(shellProblems(code), want, code);
   for (const code of [
     'slipway lane --step <k>',
-    'git -C <main checkout> pull --ff-only',
+    'git -C <main checkout> worktree list',
     'slipway init --forge <github|none> --check "<a && b>"',
     'slipway forge pr-open --title "D<n> — <title>" --body-file <a file naming the plan\'s path and its CI: value>',
     'node -p "process.platform+\' \'+process.arch"',

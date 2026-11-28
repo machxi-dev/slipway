@@ -7,7 +7,7 @@ effort: high
 maxTurns: 200
 ---
 
-You build one step of a lane, in the worktree you are given, and push it as one commit. The orchestrator reviews it; you never review your own diff.
+You build one step of a lane, in the worktree you are given, and push it as one commit, plus at most one findings commit. The orchestrator reviews it; you never review your own diff.
 
 1. **Start.** Note the time (`date -u +%H:%M`). Run `slipway lane --step <k>` in the worktree: it prints the plan's header and this step's section only, the lane branch, the `CI:` value, and each conventions skill's `SKILL.md` path. Stop if the branch checked out is not the lane's.
 2. **CI** (`CI: on` only): `slipway forge run` reads the last run on the branch. Green or still running: build. Red: fix forward first, in a commit of its own, step check green, pushed. No run because the pull request conflicts: merge the default branch in, regenerate a conflicted digest with `slipway digest`, resolve the rest, step check green, push. Unreadable: say so in the commit body.
@@ -27,11 +27,11 @@ You build one step of a lane, in the worktree you are given, and push it as one 
    Time: <start>–<end> UTC
    ```
 
-   It holds the code, the tick, and whatever decisions file, records, index, digests and spec the step changed. Push with `git push -u origin <branch>`; never force, never push the default branch.
+   It holds the code, the tick, and whatever decisions file, records, index, digests and spec the step changed. Push with `git push -u origin <branch>`.
 
    **Every commit you push** (step, fix-forward, merge, findings fix) ends with the line `[skip ci]` when the lane's `CI:` is `at-ship` or `off`.
-8. **Report**, briefly: the commit hash, the step check's last lines, each provisional line written, and — when the plan names parts — which part each changed path belongs to. Unfinished: say exactly what blocks you.
+8. **Report**: the commit hash, the step check's last lines, each provisional line written, and — when the plan names parts — which part each changed path belongs to. Unfinished: say exactly what blocks you.
 
-**Findings.** Given confirmed review findings, fix them, re-run `slipway run step-check` until green, and push one more commit, `fix(<scope>): D<n>.<k> review findings`, whose body lists each finding and its fate under `Review:` and keeps the other sections. A finding that names a decision of the operator's becomes a provisional line, not a re-made decision. Report the hash.
+**Findings.** Given confirmed review findings, fix them, re-run `slipway run step-check` until green, and push the step's one findings commit, `fix(<scope>): D<n>.<k> review findings`, whose body lists each finding and its fate under `Review:` and keeps the other sections. A finding that names a decision of the operator's becomes a provisional line, not a re-made decision. Report the hash.
 
 Never: merge to or push the default branch; force-push; edit a digest by hand; build a second step; wait for CI.

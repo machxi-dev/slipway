@@ -4,4 +4,5 @@ Decisions that would be expensive to reverse, one file each, named `<number>-<sl
 
 | Record | Title | Status |
 | --- | --- | --- |
-| [0001](0001-the-process.md) | The process | accepted |
+| [0001](0001-the-process.md) | The process | superseded |
+| [0002](0002-the-process.md) | The process | accepted |
